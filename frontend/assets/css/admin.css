@@ -1,0 +1,449 @@
+/* theme colors and variables */
+:root {
+    --admin-bg: #F7F5F0;
+    --admin-primary: #2C2825;
+    --admin-matcha: #4A6B56;
+    --admin-matcha-soft: #708238;
+    --admin-terracotta: #C1694F;
+    --admin-card-bg: #FFFFFF;
+    --admin-border: #E7E2D8;
+    --admin-text-soft: #6B6259;
+    --paper: #F7F5F0;
+    --espresso: #2C2825;
+    --matcha: #4A6B56;
+    --terracotta: #C1694F;
+}
+
+/* body and typography base styles */
+body {
+    background-color: var(--admin-bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--admin-primary);
+}
+
+.admin-page-title {
+    font-weight: 700;
+    color: var(--admin-primary);
+    margin-bottom: 0.25rem;
+}
+
+.admin-page-subtitle {
+    color: var(--admin-text-soft);
+    margin-bottom: 2rem;
+}
+
+.admin-content h2 {
+    font-weight: 700;
+    color: var(--admin-primary);
+}
+
+/* top navigation bar */
+.admin-navbar {
+    background-color: var(--admin-primary);
+    padding: 1rem 0;
+}
+
+.admin-navbar .navbar-brand {
+    color: #F7F5F0;
+    font-weight: 700;
+    font-size: 1.15rem;
+}
+
+.admin-navbar .nav-link {
+    color: rgba(247, 245, 240, 0.75) !important;
+    font-weight: 600;
+    margin-left: 0.25rem;
+    border-radius: 8px;
+    padding: 0.5rem 0.9rem !important;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.admin-navbar .nav-link:hover {
+    color: #FFFFFF !important;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.admin-navbar .nav-link.active {
+    background-color: var(--admin-matcha);
+    color: #FFFFFF !important;
+}
+
+.admin-navbar .back-to-site {
+    color: rgba(247, 245, 240, 0.6) !important;
+    font-size: 0.85rem;
+}
+
+.admin-navbar .logout-link {
+    color: var(--admin-terracotta);
+}
+
+.admin-navbar .logout-link:hover {
+    color: #e08469;
+}
+
+/* base card container */
+.admin-card {
+    background-color: var(--admin-card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--admin-border);
+    box-shadow: 0 4px 14px rgba(44, 40, 37, 0.06);
+    overflow: hidden;
+}
+
+/* large revenue kpi card on the dashboard */
+.hero-kpi-card {
+    padding: 2.5rem;
+    border: 2px solid var(--admin-matcha);
+    background: linear-gradient(135deg, #FFFFFF 0%, #F1F5EF 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hero-kpi-icon {
+    font-size: 2rem;
+    color: var(--admin-matcha);
+    margin-bottom: 0.75rem;
+}
+
+.hero-kpi-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--admin-text-soft);
+    margin-bottom: 0.5rem;
+}
+
+.hero-kpi-value {
+    font-size: 3.2rem;
+    font-weight: 700;
+    color: var(--admin-primary);
+    line-height: 1.1;
+    margin-bottom: 0.5rem;
+}
+
+.hero-kpi-trend {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--admin-matcha);
+}
+
+/* smaller side kpi cards */
+.secondary-kpi-card {
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 1;
+}
+
+.secondary-kpi-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background-color: var(--admin-bg);
+    color: var(--admin-matcha);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.secondary-kpi-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--admin-primary);
+}
+
+.secondary-kpi-label {
+    font-size: 0.85rem;
+    color: var(--admin-text-soft);
+}
+
+.secondary-kpi-trend {
+    font-size: 0.75rem;
+    color: var(--admin-matcha);
+}
+
+/* recent activity list and icons */
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--admin-bg);
+    color: var(--admin-matcha);
+    flex-shrink: 0;
+}
+
+.activity-icon.type-cancel {
+    color: var(--admin-terracotta);
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--admin-border);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-time {
+    font-size: 0.8rem;
+    color: var(--admin-text-soft);
+    white-space: nowrap;
+}
+
+/* active order cards in orders.php */
+.order-card {
+    padding: 1.5rem;
+}
+
+.order-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.order-table-label {
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+.order-id {
+    font-size: 0.8rem;
+    color: var(--admin-text-soft);
+}
+
+.order-items-list {
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: 0.75rem;
+}
+
+.order-items-list li {
+    padding: 0.2rem 0;
+    color: var(--admin-text-soft);
+}
+
+.order-items-list li::before {
+    content: "•";
+    color: var(--admin-matcha);
+    margin-right: 0.5rem;
+}
+
+.order-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--admin-border);
+    padding-top: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.order-total {
+    font-weight: 700;
+}
+
+.order-payment {
+    font-size: 0.8rem;
+    color: var(--admin-text-soft);
+}
+
+/* data tables for reservations, logs, and inquiries */
+.admin-table {
+    margin-bottom: 0;
+}
+
+.admin-table thead th {
+    background-color: #F7F5F0 !important;
+    color: #2C2825 !important;
+    font-weight: 700 !important;
+    border: none !important;
+    border-bottom: 2px solid rgba(44, 40, 37, 0.12) !important;
+    padding: 1rem !important;
+    font-size: 0.78rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    vertical-align: middle;
+}
+
+.admin-table tbody td {
+    padding: 1rem;
+    vertical-align: middle;
+    border-color: var(--admin-border);
+    color: var(--admin-primary);
+}
+
+.admin-table tbody tr:hover {
+    background-color: rgba(74, 107, 86, 0.04);
+}
+
+.nook-name {
+    font-weight: 700;
+}
+
+.nook-type,
+.guest-email,
+.log-note,
+.archived-badge {
+    font-size: 0.8rem;
+    color: var(--admin-text-soft);
+}
+
+.log-date {
+    font-size: 0.85rem;
+    color: var(--admin-text-soft);
+    white-space: nowrap;
+}
+
+.admin-empty-state {
+    color: rgba(44, 40, 37, 0.5);
+    font-style: italic;
+}
+
+/* order and reservation status badges */
+.badge-status {
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+}
+
+.badge-status-preparing {
+    background-color: #EDE7DA;
+    color: var(--admin-primary);
+}
+
+.badge-status-ready {
+    background-color: var(--admin-matcha);
+    color: #FFFFFF;
+}
+
+.badge-status-served {
+    background-color: #D8D2C4;
+    color: var(--admin-primary);
+}
+
+.badge-status-upcoming {
+    background-color: var(--admin-matcha);
+    color: #FFFFFF;
+}
+
+.badge-status-checkedin {
+    background-color: var(--admin-matcha-soft);
+    color: #FFFFFF;
+}
+
+/* audit log entry badges */
+.badge-type {
+    font-weight: 600;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.badge-type-order {
+    background-color: var(--admin-primary);
+    color: #FFFFFF;
+}
+
+.badge-type-reservation {
+    background-color: var(--admin-matcha-soft);
+    color: #FFFFFF;
+}
+
+/* customer message status badges */
+.badge-read {
+    background-color: var(--admin-border);
+    color: var(--admin-primary);
+    font-weight: 500;
+}
+
+.badge-unread {
+    background-color: rgba(193, 105, 79, 0.15);
+    color: var(--admin-terracotta);
+    font-weight: 500;
+}
+
+/* buttons */
+.btn-admin-cancel {
+    background-color: var(--admin-terracotta);
+    border: none;
+    color: #FFFFFF;
+    border-radius: 999px;
+    font-weight: 600;
+    padding: 0.4rem 1rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.btn-admin-cancel:hover {
+    background-color: #A85640;
+    color: #FFFFFF;
+}
+
+.btn-matcha {
+    background-color: var(--admin-matcha);
+    color: #ffffff;
+    border: none;
+    font-weight: 600;
+}
+
+.btn-matcha:hover {
+    background-color: #3b5645;
+    color: #ffffff;
+}
+
+/* admin login page layout and card */
+.admin-login-body {
+    background-color: var(--paper);
+    color: var(--espresso);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+}
+
+.login-card {
+    background-color: #ffffff;
+    border: 1px solid rgba(44, 40, 37, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(44, 40, 37, 0.08);
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 420px;
+}
+
+.login-card h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--espresso);
+}
+
+.login-card p.subtitle {
+    color: rgba(44, 40, 37, 0.6);
+    font-size: 0.9rem;
+}
+
+.alert-terracotta {
+    background-color: rgba(193, 105, 79, 0.1);
+    border: 1px solid rgba(193, 105, 79, 0.3);
+    color: var(--terracotta);
+}
+
+.badge-admin {
+    background-color: var(--espresso);
+    color: var(--paper);
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    padding: 0.35em 0.7em;
+}

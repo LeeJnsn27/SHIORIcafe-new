@@ -1,10 +1,10 @@
+
 <?php
 // Set response header to return JSON
 header("Content-Type: application/json");
 
-// Connect to the database (goes up one level from api/ to backend/, then into config/)
+// Connect to the PostgreSQL database
 require_once "../config/db.php";
-/** @var mysqli $conn */
 
 // Read data sent from the order checkout
 $request = json_decode(file_get_contents("php://input"), true);
@@ -42,15 +42,15 @@ foreach ($items as $item) {
     }
 }
 
-// Step 1: Save the main order record
-$orderSql = "INSERT INTO orders (table_number, payment_method, receipt_email, total)
-             VALUES (?, ?, ?, ?)";
-$stmt = mysqli_prepare($conn, $orderSql);
-mysqli_stmt_bind_param($stmt, "sssd", $tableNumber, $paymentMethod, $receiptEmail, $total);
+try {
+    // Step 1: Save the main order record
+    $orderSql = "INSERT INTO orders (table_number, payment_method, receipt_email, total)
+                 VALUES (?, ?, ?, ?) RETURNING order_id";
 
-if (mysqli_stmt_execute($stmt)) {
-    $orderId = mysqli_insert_id($conn);
-    mysqli_stmt_close($stmt);
+    $stmt = $conn->prepare($orderSql);
+    $stmt->execute([$tableNumber, $paymentMethod, $receiptEmail, $total]);
+
+    $orderId = $stmt->fetchColumn();
 
     // Step 2: Loop through each item and save it in order_items table
     foreach ($items as $item) {
@@ -60,16 +60,16 @@ if (mysqli_stmt_execute($stmt)) {
 
         $itemSql = "INSERT INTO order_items (order_id, item_name, price, quantity)
                     VALUES (?, ?, ?, ?)";
-        $itemStmt = mysqli_prepare($conn, $itemSql);
-        mysqli_stmt_bind_param($itemStmt, "isdi", $orderId, $itemName, $itemPrice, $quantity);
-        mysqli_stmt_execute($itemStmt);
-        mysqli_stmt_close($itemStmt);
+
+        $itemStmt = $conn->prepare($itemSql);
+        $itemStmt->execute([$orderId, $itemName, $itemPrice, $quantity]);
     }
 
     echo json_encode(["success" => true, "orderId" => $orderId, "total" => $total]);
-} else {
-    echo json_encode(["error" => "Failed to save order: " . mysqli_error($conn)]);
-}
 
-mysqli_close($conn);
+} catch (PDOException $e) {
+    http_response_code(500);
+    error_log("Order creation failed: " . $e->getMessage());
+    echo json_encode(["error" => "Failed to save order."]);
+}
 ?>

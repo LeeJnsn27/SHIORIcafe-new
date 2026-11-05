@@ -4,47 +4,37 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'Cashier') {
     header("Location: login.php");
     exit();
 }
-
 require_once "../backend/config/db.php";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    // 1. CSRF Validation
     if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
-        $_SESSION['error_msg'] = "Security error: Invalid CSRF token.";
-        header("Location: queue.php");
-        exit();
-    }
-
-    // 2. Input Validation (Ensure order_id is not empty and is purely numeric)
-    if (empty($_POST['order_id']) || !ctype_digit((string)$_POST['order_id'])) {
-        $_SESSION['error_msg'] = "Invalid Order ID provided.";
+        $_SESSION['error_msg'] = "Invalid CSRF token.";
         header("Location: queue.php");
         exit();
     }
 
     $order_id = $_POST['order_id'];
-    $new_status = $_POST['new_status'] ?? '';
-    $allowed_statuses = ['Pending', 'Preparing', 'Ready', 'Served', 'Completed'];
-    
-    if (in_array($new_status, $allowed_statuses)) {
-        $update_query = "
-            UPDATE shioricafe_schema.\"order\" 
-            SET preparation_status = $1, updated_at = NOW() 
-            WHERE order_id = $2
-        ";
+    $new_status = $_POST['new_status'];
+
+    try {
+        $conn->beginTransaction();
         
-        $result = pg_query_params($conn, $update_query, array($new_status, $order_id));
+        // SELECT ... FOR UPDATE applies a row-level lock preventing race conditions
+        $lock_stmt = $conn->prepare("SELECT preparation_status FROM shioricafe_schema.\"order\" WHERE order_id = ? FOR UPDATE");
+        $lock_stmt->execute([$order_id]);
         
-        if ($result) {
-            $_SESSION['success_msg'] = "Order #$order_id updated to $new_status.";
-        } else {
-            $_SESSION['error_msg'] = "Database error updating order.";
+        if ($lock_stmt->fetch(PDO::FETCH_ASSOC)) {
+            $update_stmt = $conn->prepare("UPDATE shioricafe_schema.\"order\" SET preparation_status = ?, updated_at = NOW() WHERE order_id = ?");
+            $update_stmt->execute([$new_status, $order_id]);
+            $_SESSION['success_msg'] = "Order #$order_id advanced to $new_status.";
         }
-    } else {
-        $_SESSION['error_msg'] = "Invalid status selected.";
+        
+        $conn->commit();
+    } catch (PDOException $e) {
+        $conn->rollBack();
+        $_SESSION['error_msg'] = "Database error: Failed to update order.";
     }
 }
-
 header("Location: queue.php");
 exit();
 ?>

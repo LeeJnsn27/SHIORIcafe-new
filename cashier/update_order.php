@@ -7,11 +7,23 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'Cashier') {
 
 require_once "../backend/config/db.php";
 
-if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['order_id']) && isset($_POST['new_status'])) {
-    $order_id = $_POST['order_id'];
-    $new_status = $_POST['new_status'];
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    // 1. CSRF Validation
+    if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $_SESSION['error_msg'] = "Security error: Invalid CSRF token.";
+        header("Location: queue.php");
+        exit();
+    }
 
-    // Validate allowed statuses based on the PostgreSQL schema constraints
+    // 2. Input Validation (Ensure order_id is not empty and is purely numeric)
+    if (empty($_POST['order_id']) || !ctype_digit((string)$_POST['order_id'])) {
+        $_SESSION['error_msg'] = "Invalid Order ID provided.";
+        header("Location: queue.php");
+        exit();
+    }
+
+    $order_id = $_POST['order_id'];
+    $new_status = $_POST['new_status'] ?? '';
     $allowed_statuses = ['Pending', 'Preparing', 'Ready', 'Served', 'Completed'];
     
     if (in_array($new_status, $allowed_statuses)) {
@@ -33,7 +45,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['order_id']) && isset(
     }
 }
 
-// Redirect back to the queue
 header("Location: queue.php");
 exit();
 ?>

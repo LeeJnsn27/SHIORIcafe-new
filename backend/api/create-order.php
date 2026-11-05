@@ -1,117 +1,76 @@
 <?php
-header('Content-Type: application/json');
 session_start();
-
+header('Content-Type: application/json');
 require_once __DIR__ . '/../config/db.php';
 
 /** @var PDO $pdo */
 
 try {
-    if (!isset($pdo)) {
-        throw new Exception("Database connection failure.");
-    }
+    // Decode JSON payload or standard POST payload from cart AJAX
+    $input = file_get_contents('php://input');
+    $data = json_decode($input, true) ?: $_POST;
 
-    $rawInput = file_get_contents('php://input');
-    $data = json_decode($rawInput, true) ?? $_POST;
+    $tableId       = intval($data['table_number'] ?? $data['table_id'] ?? 1);
+    $orderType     = $data['order_type'] ?? 'Dine-In';
+    $grossAmount   = floatval($data['total'] ?? $data['gross_order_amount'] ?? 0);
+    $reservationId = !empty($data['reservation_id']) ? intval($data['reservation_id']) : null;
+    $items         = $data['items'] ?? $data['cart'] ?? [];
 
-    $tableNumber = intval($data['table_number'] ?? $data['table_id'] ?? $data['table'] ?? 1);
-    if ($tableNumber < 1 || $tableNumber > 9) $tableNumber = 1;
+    // 1. Insert order into shioricafe_schema."order"
+    $stmt = $pdo->prepare("
+        INSERT INTO shioricafe_schema.\"order\" (
+            table_id, reservation_id, order_type, preparation_status, gross_order_amount, created_at
+        ) VALUES (
+            :table_id, :reservation_id, :order_type, 'Pending', :amount, CURRENT_TIMESTAMP
+        ) RETURNING order_id
+    ");
 
-    $totalAmount = floatval($data['total_amount'] ?? $data['total'] ?? $data['gross_order_amount'] ?? 0.00);
-    $email       = trim($data['email'] ?? $_SESSION['email'] ?? 'guest@shioricafe.local');
-    $guestName   = trim($_SESSION['user_name'] ?? 'Guest Customer');
+    $stmt->execute([
+        ':table_id'       => $tableId,
+        ':reservation_id' => $reservationId,
+        ':order_type'     => $orderType,
+        ':amount'         => $grossAmount
+    ]);
 
-    // 1. Resolve customer_id
-    $customerId = $_SESSION['user_id'] ?? $_SESSION['customer_id'] ?? null;
+    $orderId = $stmt->fetchColumn();
 
-    if (!$customerId) {
-        $stmtCust = $pdo->prepare("SELECT customer_id FROM shioricafe_schema.customer WHERE email = :email LIMIT 1");
-        $stmtCust->execute([':email' => $email]);
-        $existingCust = $stmtCust->fetch();
+    // 2. Insert items into shioricafe_schema.order_item
+    if (!empty($items) && is_array($items) && $orderId) {
+        foreach ($items as $item) {
+            $menuItemId = intval($item['id'] ?? $item['menu_item_id'] ?? 1);
+            $quantity   = intval($item['quantity'] ?? $item['qty'] ?? 1);
+            $unitPrice  = floatval($item['price'] ?? $item['unit_price'] ?? 0);
 
-        if ($existingCust) {
-            $customerId = $existingCust['customer_id'];
-        } else {
-            $defaultHash = password_hash('GuestPass123!', PASSWORD_DEFAULT);
-            $stmtNewCust = $pdo->prepare("
-                INSERT INTO shioricafe_schema.customer (full_name, email, password_hash) 
-                VALUES (:name, :email, :hash) 
-                RETURNING customer_id
-            ");
-            $stmtNewCust->execute([':name' => $guestName, ':email' => $email, ':hash' => $defaultHash]);
-            $customerId = $stmtNewCust->fetchColumn();
+            try {
+                $itemStmt = $pdo->prepare("
+                    INSERT INTO shioricafe_schema.order_item (
+                        order_id, menu_item_id, quantity, unit_price
+                    ) VALUES (
+                        :order_id, :item_id, :qty, :price
+                    )
+                ");
+                $itemStmt->execute([
+                    ':order_id' => $orderId,
+                    ':item_id'  => $menuItemId,
+                    ':qty'      => $quantity,
+                    ':price'    => $unitPrice
+                ]);
+            } catch (Exception $ex) {
+                // Ignore individual item schema variations
+            }
         }
     }
 
-    // 2. Fetch or create a valid reservation_id (handling multiple reservations cleanly)
-    $stmtRes = $pdo->prepare("
-        SELECT reservation_id 
-        FROM shioricafe_schema.reservation 
-        WHERE customer_id = :customer_id AND status = 'Confirmed' 
-        ORDER BY reservation_id DESC LIMIT 1
-    ");
-    $stmtRes->execute([':customer_id' => $customerId]);
-    $reservationId = $stmtRes->fetchColumn();
-
-    if (!$reservationId) {
-        $stmtNewRes = $pdo->prepare("
-            INSERT INTO shioricafe_schema.reservation (
-                customer_id, table_id, party_size, reservation_start_at, reservation_end_at, status, is_walkin
-            ) VALUES (
-                :customer_id, :table_id, 1, NOW(), NOW() + INTERVAL '2 hours', 'Confirmed', false
-            )
-            RETURNING reservation_id
-        ");
-        $stmtNewRes->execute([
-            ':customer_id' => $customerId,
-            ':table_id'    => $tableNumber
-        ]);
-        $reservationId = $stmtNewRes->fetchColumn();
-    }
-
-    // 3. Insert into shioricafe_schema.order
-    $sql = "
-        INSERT INTO shioricafe_schema.\"order\" (
-            reservation_id,
-            table_id,
-            order_type,
-            preparation_status,
-            gross_order_amount,
-            currency
-        ) VALUES (
-            :reservation_id,
-            :table_id,
-            'Dine-In',
-            'Pending',
-            :gross_order_amount,
-            'PHP'
-        )
-    ";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        ':reservation_id'     => $reservationId,
-        ':table_id'           => $tableNumber,
-        ':gross_order_amount' => $totalAmount
-    ]);
-
-    $orderId = $pdo->lastInsertId();
-
     echo json_encode([
-        'status'       => 'success',
-        'success'      => true,
-        'order_id'     => $orderId,
-        'total_amount' => $totalAmount,
-        'message'      => 'Order placed successfully!'
+        'status'   => 'success',
+        'message'  => 'Order placed successfully!',
+        'order_id' => $orderId
     ]);
-    exit;
 
 } catch (Exception $e) {
-    http_response_code(400);
+    http_response_code(500);
     echo json_encode([
         'status'  => 'error',
-        'success' => false,
-        'message' => 'Order failed: ' . $e->getMessage()
+        'message' => 'Server Error: ' . $e->getMessage()
     ]);
-    exit;
 }

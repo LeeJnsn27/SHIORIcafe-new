@@ -1,12 +1,10 @@
 <?php
-session_start();
-require_once "frontend/includes/header.php";
-
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
 require_once "backend/config/db.php";
-/** @var mysqli $conn */
+/** @var PDO $pdo */
 
 $contactSuccess = "";
 $contactError = "";
@@ -22,19 +20,44 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $contactError = "Please enter a valid email address.";
     } else {
-        $sql = "INSERT INTO inquiries (name, email, subject, message, status) VALUES (?, ?, ?, ?, 'Unread')";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "ssss", $name, $email, $subject, $message);
+        try {
+            // 1. Ensure shioricafe_schema.inquiry exists in PostgreSQL
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS shioricafe_schema.inquiry (
+                    inquiry_id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) NOT NULL,
+                    subject VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    status VARCHAR(50) DEFAULT 'Unread',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
 
-        if (mysqli_stmt_execute($stmt)) {
-            $contactSuccess = "Your inquiry has been sent successfully!";
-            $name = $email = $subject = $message = "";
-        } else {
-            $contactError = "Failed to send inquiry. Please try again.";
+            // 2. Insert inquiry record
+            $sql = "INSERT INTO shioricafe_schema.inquiry (name, email, subject, message, status) 
+                    VALUES (:name, :email, :subject, :message, 'Unread')";
+            $stmt = $pdo->prepare($sql);
+            $executed = $stmt->execute([
+                ':name'    => $name,
+                ':email'   => $email,
+                ':subject' => $subject,
+                ':message' => $message
+            ]);
+
+            if ($executed) {
+                $contactSuccess = "Your inquiry has been sent successfully!";
+                $name = $email = $subject = $message = "";
+            } else {
+                $contactError = "Failed to send inquiry. Please try again.";
+            }
+        } catch (Exception $e) {
+            $contactError = "Database Error: " . htmlspecialchars($e->getMessage());
         }
-        mysqli_stmt_close($stmt);
     }
 }
+
+require_once "frontend/includes/header.php";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -77,22 +100,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                             <div class="mb-3">
                                 <label for="name" class="form-label">Your Name</label>
-                                <input type="text" class="form-control" id="name" name="name" required>
+                                <input type="text" class="form-control" id="name" name="name" value="<?php echo htmlspecialchars($name ?? ''); ?>" required>
                             </div>
 
                             <div class="mb-3">
                                 <label for="email" class="form-label">Email</label>
-                                <input type="email" class="form-control" id="email" name="email" required>
+                                <input type="email" class="form-control" id="email" name="email" value="<?php echo htmlspecialchars($email ?? ''); ?>" required>
                             </div>
 
                             <div class="mb-3">
                                 <label for="subject" class="form-label">Subject</label>
-                                <input type="text" class="form-control" id="subject" name="subject" required>
+                                <input type="text" class="form-control" id="subject" name="subject" value="<?php echo htmlspecialchars($subject ?? ''); ?>" required>
                             </div>
 
                             <div class="mb-3">
                                 <label for="message" class="form-label">Message</label>
-                                <textarea class="form-control" id="message" name="message" rows="5" required></textarea>
+                                <textarea class="form-control" id="message" name="message" rows="5" required><?php echo htmlspecialchars($message ?? ''); ?></textarea>
                             </div>
 
                             <button type="submit" class="btn btn-cafe-primary w-100">Send Message</button>
@@ -102,7 +125,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             </div>
 
-            <!-- visit us -->
+            <!-- VISIT US -->
             <div class="col-lg-4">
                 <div class="card visit-card">
                     <div class="card-body">
@@ -122,9 +145,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             </div>
         </div>
     </section>
-    <?php
-    require_once "frontend/includes/footer.php";
-    ?>
+
+    <?php require_once "frontend/includes/footer.php"; ?>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="src/scripts/app.js"></script>

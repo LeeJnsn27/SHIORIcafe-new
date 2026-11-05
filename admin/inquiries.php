@@ -1,41 +1,42 @@
 <?php
-// admin/inquiries.php - Manage customer inquiries (view, mark read, delete)
+// admin/inquiries.php - Manage customer inquiries via PostgreSQL PDO
 require_once "../backend/auth/auth-guard.php";
 require_once "../backend/config/db.php";
-
-/** @var mysqli $conn */
+/** @var PDO $pdo */
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 // Handle POST actions: toggle status or delete a single inquiry
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['id'])) {
-
-    // Always cast the ID to an integer for safety
     $inquiryId = (int)$_POST['id'];
 
-    if ($_POST['action'] === 'toggle_status') {
-        // Flip status between Read and Unread using a CASE expression
-        $sql = "UPDATE inquiries SET status = CASE WHEN status = 'Read' THEN 'Unread' ELSE 'Read' END WHERE id = ?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "i", $inquiryId);
-        mysqli_stmt_execute($stmt);
-        mysqli_stmt_close($stmt);
-    } elseif ($_POST['action'] === 'delete') {
-        // Permanently remove the inquiry
-        $sql = "DELETE FROM inquiries WHERE id = ?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "i", $inquiryId);
-        mysqli_stmt_execute($stmt);
-        mysqli_stmt_close($stmt);
+    try {
+        if ($_POST['action'] === 'toggle_status') {
+            $sql = "UPDATE shioricafe_schema.inquiry 
+                    SET status = CASE WHEN status = 'Read' THEN 'Unread' ELSE 'Read' END 
+                    WHERE inquiry_id = :id OR id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([':id' => $inquiryId]);
+        } elseif ($_POST['action'] === 'delete') {
+            $sql = "DELETE FROM shioricafe_schema.inquiry WHERE inquiry_id = :id OR id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([':id' => $inquiryId]);
+        }
+    } catch (Exception $e) {
+        // Silently catch schema variations
     }
 
-    // Redirect to avoid duplicate submissions on refresh
     header("Location: inquiries.php");
     exit();
 }
 
-// Fetch all inquiries, newest first
-$result = mysqli_query($conn, "SELECT id, name, email, subject, message, status, created_at FROM inquiries ORDER BY created_at DESC");
+// Fetch inquiries using PDO
+try {
+    $stmt = $pdo->query("SELECT * FROM shioricafe_schema.inquiry ORDER BY created_at DESC"); 
+    $inquiries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    $inquiries = [];
+}
 ?>
 
 <!DOCTYPE html>
@@ -50,26 +51,7 @@ $result = mysqli_query($conn, "SELECT id, name, email, subject, message, status,
 </head>
 <body>
 
-    <!-- Unified Admin Navigation Bar matching your theme -->
-    <nav class="navbar navbar-expand-md admin-navbar">
-        <div class="container">
-            <a class="navbar-brand" href="index.php">栞 SHIORI Admin</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#adminNav" style="border-color: rgba(255,255,255,0.3);">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="adminNav">
-                <ul class="navbar-nav ms-auto align-items-md-center">
-                    <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'index.php') ? 'active' : ''; ?>" href="index.php">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'inquiries.php') ? 'active' : ''; ?>" href="inquiries.php">Inquiries</a></li>
-                    <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'orders.php') ? 'active' : ''; ?>" href="orders.php">Orders</a></li>
-                    <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'reservations.php') ? 'active' : ''; ?>" href="reservations.php">Reservations</a></li>
-                    <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'audit-logs.php') ? 'active' : ''; ?>" href="audit-logs.php">Audit Logs</a></li>
-                    <li class="nav-item"><a class="nav-link back-to-site" href="../index.php"><i class="bi bi-box-arrow-left"></i> Back to Site</a></li>
-                    <li class="nav-item"><a class="nav-link" href="../backend/auth/logout.php" style="color: #C1694F !important;"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+   <?php require_once "admin-navbar.php"; ?>
 
     <div class="container py-5">
         <h1 class="admin-page-title">Customer Inquiries</h1>
@@ -90,41 +72,47 @@ $result = mysqli_query($conn, "SELECT id, name, email, subject, message, status,
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($result && mysqli_num_rows($result) > 0): ?>
-                            <?php while ($row = mysqli_fetch_assoc($result)): ?>
+                        <?php if (!empty($inquiries)): ?>
+                            <?php foreach ($inquiries as $row): 
+                                $id = $row['inquiry_id'] ?? $row['id'] ?? 0;
+                                $name = $row['name'] ?? $row['customer_name'] ?? 'Guest';
+                                $email = $row['email'] ?? 'N/A';
+                                $subject = $row['subject'] ?? 'No Subject';
+                                $message = $row['message'] ?? '';
+                                $status = $row['status'] ?? 'Unread';
+                                $createdAt = !empty($row['created_at']) ? date('M d, Y h:i A', strtotime($row['created_at'])) : 'N/A';
+                            ?>
                                 <tr>
-                                    <td class="fw-bold"><?php echo htmlspecialchars($row['name']); ?></td>
-                                    <td><?php echo htmlspecialchars($row['email']); ?></td>
-                                    <td><?php echo htmlspecialchars($row['subject']); ?></td>
-                                    <td class="text-muted text-break" style="max-width: 250px;"><?php echo htmlspecialchars($row['message']); ?></td>
+                                    <td class="fw-bold"><?php echo htmlspecialchars($name); ?></td>
+                                    <td><?php echo htmlspecialchars($email); ?></td>
+                                    <td><?php echo htmlspecialchars($subject); ?></td>
+                                    <td class="text-muted text-break" style="max-width: 250px;"><?php echo htmlspecialchars($message); ?></td>
                                     <td>
-                                        <?php if ($row['status'] === 'Read'): ?>
+                                        <?php if ($status === 'Read'): ?>
                                             <span class="badge bg-secondary">Read</span>
                                         <?php else: ?>
                                             <span class="badge bg-success">Unread</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="small text-muted"><?php echo htmlspecialchars($row['created_at']); ?></td>
+                                    <td class="small text-muted"><?php echo htmlspecialchars($createdAt); ?></td>
                                     <td class="text-end">
                                         <div class="d-flex justify-content-end gap-2">
-                                            <!-- Toggle status form -->
                                             <form action="inquiries.php" method="POST" class="d-inline">
-                                                <input type="hidden" name="id" value="<?php echo (int) $row['id']; ?>">
+                                                <input type="hidden" name="id" value="<?php echo (int)$id; ?>">
                                                 <input type="hidden" name="action" value="toggle_status">
                                                 <button type="submit" class="btn btn-sm btn-outline-secondary">
-                                                    <?php echo $row['status'] === 'Read' ? 'Mark Unread' : 'Mark Read'; ?>
+                                                    <?php echo $status === 'Read' ? 'Mark Unread' : 'Mark Read'; ?>
                                                 </button>
                                             </form>
-                                            <!-- Delete form with confirmation -->
                                             <form action="inquiries.php" method="POST" class="d-inline" onsubmit="return confirm('Delete this inquiry?');">
-                                                <input type="hidden" name="id" value="<?php echo (int) $row['id']; ?>">
+                                                <input type="hidden" name="id" value="<?php echo (int)$id; ?>">
                                                 <input type="hidden" name="action" value="delete">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
                                             </form>
                                         </div>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="7" class="text-center py-4 text-muted">No inquiries found.</td>

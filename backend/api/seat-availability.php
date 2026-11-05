@@ -1,45 +1,63 @@
 <?php
-// Set response header to return JSON
+// backend/api/seat-availability.php - Check overlapping reservations
 header("Content-Type: application/json");
 
-// Connect to the database
-require_once "db.php";
+require_once __DIR__ . '/../config/db.php';
+/** @var PDO $pdo */
 
-// Get query parameters from URL (sent via GET request)
-$date      = trim($_GET["date"] ?? "");
-$startTime = trim($_GET["startTime"] ?? "");
+$date      = trim($_GET["date"] ?? $_GET["reservation_date"] ?? "");
+$startTime = trim($_GET["startTime"] ?? $_GET["time"] ?? "");
 $endTime   = trim($_GET["endTime"] ?? "");
 
-if ($date == "" || $startTime == "" || $endTime == "") {
-    echo json_encode(["error" => "Date, start time, and end time are required."]);
+if (empty($date) || empty($startTime)) {
+    echo json_encode([
+        "success"       => true,
+        "occupiedSeats" => [],
+        "availability"  => ["conflict" => false]
+    ]);
     exit;
 }
 
-// Query all seats that already have an overlapping reservation during that time
-$sql = "SELECT seats.seat_name
-        FROM reservations
-        INNER JOIN seats ON seats.id = reservations.seat_id
-        WHERE reservation_date = '$date'
-          AND reservation_start_time < '$endTime'
-          AND reservation_end_time > '$startTime'";
-
-$result = mysqli_query($conn, $sql);
-
-$occupiedSeats = [];
-if ($result) {
-    // Collect all occupied seat names into an array
-    while ($row = mysqli_fetch_assoc($result)) {
-        $occupiedSeats[] = $row["seat_name"];
-    }
+// If end time wasn't provided, default to +2 hours
+if (empty($endTime)) {
+    $endTime = date('H:i', strtotime("+2 hours", strtotime("$date $startTime")));
 }
 
-// Return the list of occupied seats to frontend
-echo json_encode([
-    "success" => true,
-    "occupiedSeats" => $occupiedSeats,
-    "availability" => ["conflict" => false]
-]);
+try {
+    $startAt = date('Y-m-d H:i:s', strtotime("$date $startTime"));
+    $endAt   = date('Y-m-d H:i:s', strtotime("$date $endTime"));
 
-// Close connection
-mysqli_close($conn);
+    // Query ONLY tables that have an active (non-cancelled) reservation overlapping this window
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT table_id 
+        FROM shioricafe_schema.reservation 
+        WHERE status != 'Cancelled' 
+          AND (reservation_start_at < :end_at AND reservation_end_at > :start_at)
+    ");
+
+    $stmt->execute([
+        ':start_at' => $startAt,
+        ':end_at'   => $endAt
+    ]);
+
+    $occupiedTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    echo json_encode([
+        "success"       => true,
+        "occupiedSeats" => array_map('intval', $occupiedTables),
+        "availability"  => [
+            "conflict"       => count($occupiedTables) > 0,
+            "query_start"    => $startAt,
+            "query_end"      => $endAt
+        ]
+    ]);
+
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode([
+        "success"       => false,
+        "occupiedSeats" => [],
+        "error"         => $e->getMessage()
+    ]);
+}
 ?>

@@ -11,44 +11,100 @@ $date      = trim($_GET["date"] ?? "");
 $startTime = trim($_GET["startTime"] ?? "");
 $endTime   = trim($_GET["endTime"] ?? "");
 
-if ($date == "" || $startTime == "" || $endTime == "") {
-    echo json_encode(["error" => "Date, start time, and end time are required."]);
+// Validate required inputs
+if (
+    $date === "" ||
+    $startTime === "" ||
+    $endTime === ""
+) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "error" => "Date, start time, and end time are required."
+    ]);
+    exit;
+}
+
+// Strict date and whole-minute time validation
+$dateValid = DateTime::createFromFormat("!Y-m-d", $date);
+$startValid = DateTime::createFromFormat("!H:i", $startTime);
+$endValid = DateTime::createFromFormat("!H:i", $endTime);
+
+if (
+    !$dateValid ||
+    $dateValid->format("Y-m-d") !== $date ||
+    !$startValid ||
+    $startValid->format("H:i") !== $startTime ||
+    !$endValid ||
+    $endValid->format("H:i") !== $endTime ||
+    $endTime <= $startTime
+) {
+    http_response_code(400);
+    echo json_encode([
+        "success" => false,
+        "error" => "Invalid date or time interval."
+    ]);
     exit;
 }
 
 try {
-    // Query all seats that already have an overlapping reservation during that time
-    $sql = "SELECT seats.seat_name
-            FROM reservations
-            INNER JOIN seats ON seats.id = reservations.seat_id
-            WHERE reservation_date = ?
-              AND reservation_start_time < ?
-              AND reservation_end_time > ?";
+    // Build requested reservation timestamps in Asia/Manila
+    $timezone = new DateTimeZone("Asia/Manila");
+
+    $requestedStart = new DateTime(
+        "$date $startTime",
+        $timezone
+    );
+
+    $requestedEnd = new DateTime(
+        "$date $endTime",
+        $timezone
+    );
+
+    $sql = '
+        SELECT
+            t.table_id,
+            t.table_number
+        FROM shioricafe_schema."table" t
+        WHERE t.is_available = TRUE
+          AND NOT EXISTS (
+              SELECT 1
+              FROM shioricafe_schema.reservation r
+              WHERE r.table_id = t.table_id
+                AND r.status IN (
+                    \'Confirmed\',
+                    \'Adjustment_Pending\',
+                    \'Occupied\'
+                )
+                AND r.reservation_start_at < CAST(:requested_end AS TIMESTAMP)
+                AND r.reservation_end_at > CAST(:requested_start AS TIMESTAMP)
+          )
+        ORDER BY t.table_number
+    ';
 
     $stmt = $conn->prepare($sql);
-    $stmt->execute([$date, $endTime, $startTime]);
 
-    $occupiedSeats = [];
+    $stmt->execute([
+        ":requested_start" => $requestedStart->format("Y-m-d H:i:s"),
+        ":requested_end" => $requestedEnd->format("Y-m-d H:i:s")
+    ]);
 
-    // Collect all occupied seat names into an array
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $occupiedSeats[] = $row["seat_name"];
-    }
+    $availableTables = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Return the list of occupied seats to frontend
     echo json_encode([
         "success" => true,
-        "occupiedSeats" => $occupiedSeats,
-        "availability" => ["conflict" => !empty($occupiedSeats)]
+        "availableTables" => $availableTables
     ]);
 
 } catch (PDOException $e) {
     http_response_code(500);
+
     error_log("Seat availability error: " . $e->getMessage());
 
     echo json_encode([
         "success" => false,
-        "error" => "Failed to check seat availability."
+        "error" => "Failed to check table availability."
     ]);
 }
+
 ?>

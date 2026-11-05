@@ -65,7 +65,7 @@ $result = mysqli_query($conn, "SELECT id, name, email, subject, message, status,
                     <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'reservations.php') ? 'active' : ''; ?>" href="reservations.php">Reservations</a></li>
                     <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'audit-logs.php') ? 'active' : ''; ?>" href="audit-logs.php">Audit Logs</a></li>
                     <li class="nav-item"><a class="nav-link back-to-site" href="../index.php"><i class="bi bi-box-arrow-left"></i> Back to Site</a></li>
-                    <li class="nav-item"><a class="nav-link" href="../backend/auth/logout.php" style="color: #C1694F !important;"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../logout.php" style="color: #C1694F !important;"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                 </ul>
             </div>
         </div>

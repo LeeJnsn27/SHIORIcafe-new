@@ -170,6 +170,7 @@ require_once "frontend/includes/footer.php";
     <!-- jquery before script.js -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="src/scripts/app.js"></script>
+    <script src="frontend/assets/js/app.js"></script>
+    <script src="frontend/assets/js/chat.js"></script>
 </body>
 </html>

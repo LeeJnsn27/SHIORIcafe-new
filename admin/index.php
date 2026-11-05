@@ -2,67 +2,134 @@
 // Start session and include database connection and auth guard
 require_once "../backend/auth/auth-guard.php";
 require_once "../backend/config/db.php";
-/** @var mysqli $conn */
+/** @var PDO $conn */
+
+// Use Philippine time for all PostgreSQL date calculations.
+// This affects only the current database connection.
+$conn->exec("SET TIME ZONE 'Asia/Manila'");
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 // 1. Total Sales: Today vs Yesterday
-$today_rev_query = "SELECT SUM(total) as rev, COUNT(*) as count FROM orders WHERE DATE(created_at) = CURDATE()";
-$today_res = mysqli_fetch_assoc(mysqli_query($conn, $today_rev_query));
-$today_sales = $today_res['rev'] ?? 0.00;
-$today_orders_count = $today_res['count'] ?? 0;
+// Half-open ranges [start, end); voided orders excluded.
+$today_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev,
+           COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= CURRENT_DATE
+      AND created_at < CURRENT_DATE + 1
+';
+$today_res = $conn->query($today_rev_query)->fetch(PDO::FETCH_ASSOC);
+$today_sales = (float)($today_res['rev'] ?? 0.00);
+$today_orders_count = (int)($today_res['count'] ?? 0);
 
-$yest_rev_query = "SELECT SUM(total) as rev FROM orders WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
-$yest_res = mysqli_fetch_assoc(mysqli_query($conn, $yest_rev_query));
-$yesterday_sales = $yest_res['rev'] ?? 0.00;
+$yest_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= CURRENT_DATE - 1
+      AND created_at < CURRENT_DATE
+';
+$yest_res = $conn->query($yest_rev_query)->fetch(PDO::FETCH_ASSOC);
+$yesterday_sales = (float)($yest_res['rev'] ?? 0.00);
 
 // Calculate Today vs Yesterday percentage change
 $sales_diff = $today_sales - $yesterday_sales;
-$sales_pct_change = ($yesterday_sales > 0) ? ($sales_diff / $yesterday_sales) * 100 : ($today_sales > 0 ? 100 : 0);
+$sales_pct_change = ($yesterday_sales > 0)
+    ? ($sales_diff / $yesterday_sales) * 100
+    : ($today_sales > 0 ? 100 : 0);
 
 // 2. Total Sales: This Week vs Last Week
-$week_rev_query = "SELECT SUM(total) as rev FROM orders WHERE YEARWEEK(created_at, 1) = YEARWEEK(CURDATE(), 1)";
-$week_sales = mysqli_fetch_assoc(mysqli_query($conn, $week_rev_query))['rev'] ?? 0.00;
+// PostgreSQL date_trunc('week') starts on Monday.
+$week_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'week\', CURRENT_DATE)
+      AND created_at < date_trunc(\'week\', CURRENT_DATE)
+                            + INTERVAL \'1 week\'
+';
+$week_sales = (float)(
+    $conn->query($week_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
 
-$last_week_rev_query = "SELECT SUM(total) as rev FROM orders WHERE YEARWEEK(created_at, 1) = YEARWEEK(DATE_SUB(CURDATE(), INTERVAL 1 WEEK), 1)";
-$last_week_sales = mysqli_fetch_assoc(mysqli_query($conn, $last_week_rev_query))['rev'] ?? 0.00;
-$week_pct_change = ($last_week_sales > 0) ? (($week_sales - $last_week_sales) / $last_week_sales) * 100 : ($week_sales > 0 ? 100 : 0);
+$last_week_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'week\', CURRENT_DATE)
+                            - INTERVAL \'1 week\'
+      AND created_at < date_trunc(\'week\', CURRENT_DATE)
+';
+$last_week_sales = (float)(
+    $conn->query($last_week_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
+
+$week_pct_change = ($last_week_sales > 0)
+    ? (($week_sales - $last_week_sales) / $last_week_sales) * 100
+    : ($week_sales > 0 ? 100 : 0);
 
 // 3. Total Sales: This Month
-$month_rev_query = "SELECT SUM(total) as rev FROM orders WHERE MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE())";
-$month_sales = mysqli_fetch_assoc(mysqli_query($conn, $month_rev_query))['rev'] ?? 0.00;
+$month_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'month\', CURRENT_DATE)
+      AND created_at < date_trunc(\'month\', CURRENT_DATE)
+                            + INTERVAL \'1 month\'
+';
+$month_sales = (float)(
+    $conn->query($month_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
 
 // 4. Total Orders & Pending Orders Count
-$total_orders_query = "SELECT COUNT(*) as count FROM orders";
-$total_orders = mysqli_fetch_assoc(mysqli_query($conn, $total_orders_query))['count'] ?? 0;
+// Voided orders are excluded.
+$total_orders_query = '
+    SELECT COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+';
+$total_orders = (int)(
+    $conn->query($total_orders_query)->fetch(PDO::FETCH_ASSOC)['count'] ?? 0
+);
 
-// Checking if a status column exists for pending orders, otherwise default to 0 or active count
-$pending_orders = 0;
-$status_check = mysqli_query($conn, "SHOW COLUMNS FROM orders LIKE 'status'");
-if ($status_check && mysqli_num_rows($status_check) > 0) {
-    $pend_query = "SELECT COUNT(*) as count FROM orders WHERE status = 'Preparing' OR status = 'Pending'";
-    $pend_res = mysqli_query($conn, $pend_query);
-    if ($pend_res) {
-        $pending_orders = mysqli_fetch_assoc($pend_res)['count'] ?? 0;
-    }
-} else {
-    $pending_orders = $today_orders_count; // fallback if status isn't tracked granularly yet
-}
+$pend_stmt = $conn->prepare('
+    SELECT COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND preparation_status IN (?, ?)
+');
+$pend_stmt->execute(['Pending', 'Preparing']);
+$pending_orders = (int)(
+    $pend_stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0
+);
 
 // 5. Average Order Value (AOV)
-$all_rev_query = "SELECT SUM(total) as total_rev, COUNT(*) as total_count FROM orders";
-$all_rev_res = mysqli_fetch_assoc(mysqli_query($conn, $all_rev_query));
-$grand_total_rev = $all_rev_res['total_rev'] ?? 0.00;
-$grand_total_count = $all_rev_res['total_count'] ?? 0;
-$avg_order_value = ($grand_total_count > 0) ? $grand_total_rev / $grand_total_count : 0.00;
+$all_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS total_rev,
+           COUNT(*) AS total_count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+';
+$all_rev_res = $conn->query($all_rev_query)->fetch(PDO::FETCH_ASSOC);
+
+$grand_total_rev = (float)($all_rev_res['total_rev'] ?? 0.00);
+$grand_total_count = (int)($all_rev_res['total_count'] ?? 0);
+
+$avg_order_value = ($grand_total_count > 0)
+    ? $grand_total_rev / $grand_total_count
+    : 0.00;
 
 // 6. Net Profit / Profit Margin (Estimated standard cafe margin ~45%)
 $profit_margin_pct = 45.0;
 $estimated_net_profit = $month_sales * ($profit_margin_pct / 100);
 
-// 7. Revenue per Employee / RevPASH (Assuming baseline staff count of 4)
+// 7. Revenue per Employee (Assuming baseline staff count of 4)
 $active_staff_count = 4;
-$rev_per_employee = ($active_staff_count > 0) ? $month_sales / $active_staff_count : 0.00;
+$rev_per_employee = ($active_staff_count > 0)
+    ? $month_sales / $active_staff_count
+    : 0.00;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -91,7 +158,7 @@ $rev_per_employee = ($active_staff_count > 0) ? $month_sales / $active_staff_cou
                     <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'reservations.php') ? 'active' : ''; ?>" href="reservations.php">Reservations</a></li>
                     <li class="nav-item"><a class="nav-link <?php echo ($currentPage === 'audit-logs.php') ? 'active' : ''; ?>" href="audit-logs.php">Audit Logs</a></li>
                     <li class="nav-item"><a class="nav-link back-to-site" href="../index.php"><i class="bi bi-box-arrow-left"></i> Back to Site</a></li>
-                    <li class="nav-item"><a class="nav-link" href="../backend/auth/logout.php" style="color: #C1694F !important;"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                    <li class="nav-item"><a class="nav-link" href="../logout.php" style="color: #C1694F !important;"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                 </ul>
             </div>
         </div>

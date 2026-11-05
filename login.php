@@ -3,7 +3,7 @@
 session_start();
 // Redirect already logged-in users according to their role
 if (isset($_SESSION["user_role"])) {
-    if ($_SESSION["user_role"] === "admin") {
+    if ($_SESSION["user_role"] === "Manager") {
         header("Location: admin/index.php");
     } else {
         header("Location: index.php");
@@ -14,7 +14,7 @@ if (isset($_SESSION["user_role"])) {
 // Connect to database
 require_once "backend/config/db.php";
 
-/** @var mysqli $conn */
+/** @var PDO $conn */
 
 $error = "";
 $email = ""; // Initialize variable to avoid notices
@@ -27,29 +27,34 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     if (empty($email) || empty($password)) {
         $error = "Please enter both email and password.";
     } else {
-        // Query customer by email
-        $sql = "SELECT id, full_name, email, password, role FROM users WHERE email = ?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "s", $email);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        $user = mysqli_fetch_assoc($result);
-        mysqli_stmt_close($stmt);
+        try {
+            // Query customer by email (unique index is on LOWER(email))
+            $stmt = $conn->prepare(
+                "SELECT customer_id, full_name, email, password_hash
+                 FROM shioricafe_schema.customer
+                 WHERE LOWER(email) = LOWER(:email)"
+            );
+            $stmt->execute([":email" => $email]);
+            $customer = $stmt->fetch();
+        } catch (PDOException $e) {
+            error_log("Customer login query failed: " . $e->getMessage());
+            $customer = false;
+            $error = "Something went wrong. Please try again later.";
+        }
 
-        // Verify password
-        if ($user && password_verify($password, $user["password"])) {
-            $_SESSION["user_id"]   = $user["id"];
-            $_SESSION["user_name"] = $user["full_name"];
-            $_SESSION["user_role"] = $user["role"];
+        if ($error === "") {
+            // Verify password
+            if ($customer && password_verify($password, $customer["password_hash"])) {
+                // Prevent session fixation
+                session_regenerate_id(true);
 
-            // Staff goes to admin dashboard, customers go to home
-            if ($user["role"] === "admin") {
-                header("Location: admin/index.php");
-            } else {
+                $_SESSION["user_id"]   = $customer["customer_id"];
+                $_SESSION["user_name"] = $customer["full_name"];
+                $_SESSION["user_role"] = "Customer";
+
                 header("Location: index.php");
+                exit();
             }
-            exit();
-        } else {
             $error = "Invalid email or password.";
         }
     }
@@ -58,7 +63,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 // Include unified global header
 require_once "frontend/includes/header.php";
 ?>
-
+require_once "frontend/includes/navbar."
 <style>
     body {
         background-color: #F7F5F0;

@@ -1,4 +1,3 @@
-
 <?php
 /**
  * SHIORI Café - Centralized PostgreSQL Database Connection

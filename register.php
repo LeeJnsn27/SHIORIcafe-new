@@ -5,7 +5,7 @@ session_start();
 // Connect to database
 require_once "backend/config/db.php";
 
-/** @var mysqli $conn */
+/** @var PDO $conn */
 
 $errors = [];
 $success = "";
@@ -40,38 +40,51 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $errors[] = "Passwords do not match.";
     }
 
-    // Check if email already exists in database
+     // Check if email already exists in database (unique index is on LOWER(email))
     if (empty($errors)) {
-        $checkEmailSql = "SELECT id FROM users WHERE email = ?";
-        $stmt = mysqli_prepare($conn, $checkEmailSql);
-        mysqli_stmt_bind_param($stmt, "s", $email);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
+        try {
+            $stmt = $conn->prepare(
+                "SELECT 1 FROM shioricafe_schema.customer WHERE LOWER(email) = LOWER(:email)"
+            );
+            $stmt->execute([":email" => $email]);
 
-        if (mysqli_num_rows($result) > 0) {
-            $errors[] = "This email is already registered.";
+            if ($stmt->fetchColumn() !== false) {
+                $errors[] = "This email is already registered.";
+            }
+        } catch (PDOException $e) {
+            error_log("Customer email check failed: " . $e->getMessage());
+            $errors[] = "Something went wrong. Please try again later.";
         }
-        mysqli_stmt_close($stmt);
     }
 
-    // Hash password and save new user
+    // Hash password and save new customer
     if (empty($errors)) {
         // Securely hash password
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-        // Insert new record into users table
-        $insertSql = "INSERT INTO users (full_name, email, password, role) VALUES (?, ?, ?, 'customer')";
-        $stmt = mysqli_prepare($conn, $insertSql);
-        mysqli_stmt_bind_param($stmt, "sss", $full_name, $email, $hashedPassword);
+        try {
+            // Insert new record into customer table (no role column; every row is a Customer)
+            $stmt = $conn->prepare(
+                "INSERT INTO shioricafe_schema.customer (full_name, email, password_hash)
+                 VALUES (:full_name, :email, :password_hash)"
+            );
+            $stmt->execute([
+                ":full_name"     => $full_name,
+                ":email"         => $email,
+                ":password_hash" => $hashedPassword,
+            ]);
 
-        if (mysqli_stmt_execute($stmt)) {
             $success = "Registration successful! You can now log in.";
             $full_name = $email = $password = $confirm_password = "";
-        } else {
-            $errors[] = "Something went wrong. Please try again later.";
+        } catch (PDOException $e) {
+            // 23505 = unique violation: another request registered this email first
+            if ($e->getCode() === "23505") {
+                $errors[] = "This email is already registered.";
+            } else {
+                error_log("Customer registration failed: " . $e->getMessage());
+                $errors[] = "Something went wrong. Please try again later.";
+            }
         }
-
-        mysqli_stmt_close($stmt);
     }
 }
 

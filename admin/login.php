@@ -2,8 +2,8 @@
 // Start session
 session_start();
 
-// Skip login if already an active admin
-if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
+// Skip login if already an active Manager
+if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'Manager') {
     header("Location: index.php");
     exit();
 }
@@ -11,7 +11,7 @@ if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
 // Connect to database
 require_once "../backend/config/db.php";
 
-/** @var mysqli $conn */
+/** @var PDO $conn */
 
 $error = "";
 
@@ -24,32 +24,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     if (empty($email) || empty($password)) {
         $error = "Please enter both email and password.";
     } else {
+        try {
+            // Query staff record by email (unique index is on LOWER(email))
+            $stmt = $conn->prepare(
+                "SELECT staff_id, full_name, email, role, password_hash
+                 FROM shioricafe_schema.staff
+                 WHERE LOWER(email) = LOWER(:email)"
+            );
+            $stmt->execute([":email" => $email]);
+            $staff = $stmt->fetch();
+        } catch (PDOException $e) {
+            error_log("Staff login query failed: " . $e->getMessage());
+            $staff = false;
+            $error = "Something went wrong. Please try again later.";
+        }
 
-        // Query user record by email
-        $sql = "SELECT id, full_name, email, password, role FROM users WHERE email = ?";
-        $stmt = mysqli_prepare($conn, $sql);
-        mysqli_stmt_bind_param($stmt, "s", $email);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-        $user = mysqli_fetch_assoc($result);
-        mysqli_stmt_close($stmt);
+        if ($error === "") {
+            // Verify password hash
+            if ($staff && password_verify($password, $staff["password_hash"])) {
 
-        // Verify password hash
-        if ($user && password_verify($password, $user["password"])) {
+                // Restrict this admin area strictly to Managers
+                if ($staff["role"] !== "Manager") {
+                    $error = "Access denied. Manager credentials required.";
+                } else {
+                    // Prevent session fixation
+                    session_regenerate_id(true);
 
-            // Restrict access strictly to admin role
-            if ($user["role"] !== "admin") {
-                $error = "Access denied. Admin credentials required.";
+                    $_SESSION["user_id"]   = $staff["staff_id"];
+                    $_SESSION["user_name"] = $staff["full_name"];
+                    $_SESSION["user_role"] = "Manager";
+
+                    header("Location: index.php");
+                    exit();
+                }
             } else {
-                $_SESSION["user_id"]   = $user["id"];
-                $_SESSION["user_name"] = $user["full_name"];
-                $_SESSION["user_role"] = "admin";
-
-                header("Location: index.php");
-                exit();
+                $error = "Invalid email or password.";
             }
-        } else {
-            $error = "Invalid email or password.";
         }
     }
 }

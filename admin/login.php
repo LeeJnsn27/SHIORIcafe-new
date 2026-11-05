@@ -9,34 +9,30 @@ require_once __DIR__ . '/../backend/config/db.php';
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $username = trim($_POST["username"] ?? "");
+    $email = trim($_POST["email"] ?? "");
     $password = $_POST["password"] ?? "";
 
-    if (empty($username) || empty($password)) {
-        $error = "Please enter both username and password.";
+    if (empty($email) || empty($password)) {
+        $error = "Please enter both email and password.";
     } else {
         try {
-            // Direct admin fallback credential check
-            if (($username === 'admin' && $password === 'admin123') || ($username === 'admin' && $password === 'admin')) {
-                $_SESSION['admin_logged_in'] = true;
-                $_SESSION['admin_user'] = 'admin';
-                header("Location: index.php");
-                exit;
-            }
-
             if (isset($pdo)) {
+                // Corrected to query the staff table using email
                 $stmt = $pdo->prepare("
-                    SELECT id, username, email, password_hash 
-                    FROM shioricafe_schema.customer 
-                    WHERE username = :u OR email = :u 
+                    SELECT staff_id, email, password_hash, role 
+                    FROM shioricafe_schema.staff 
+                    WHERE email = :email AND is_active = true 
                     LIMIT 1
                 ");
-                $stmt->execute([':u' => $username]);
+                $stmt->execute([':email' => $email]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($user && password_verify($password, $user['password_hash'])) {
-                    $_SESSION['admin_logged_in'] = true;
-                    $_SESSION['admin_user'] = $user['username'];
+                    // Corrected to match auth-guard.php expectations
+                    $_SESSION['user_role'] = 'admin';
+                    $_SESSION['staff_id'] = $user['staff_id'];
+                    $_SESSION['staff_role'] = $user['role'];
+                    
                     header("Location: index.php");
                     exit;
                 }
@@ -96,15 +92,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             </div>
         <?php endif; ?>
 
+        <!-- Form posts back to login.php -->
         <form action="login.php" method="POST">
             <div class="mb-3">
-                <label for="username" class="form-label text-light">Username or Email</label>
+                <!-- Corrected label and name to 'email' -->
+                <label for="email" class="form-label text-light">Staff Email</label>
                 <input 
-                    type="text" 
+                    type="email" 
                     class="form-control" 
-                    id="username" 
-                    name="username" 
-                    placeholder="admin" 
+                    id="email" 
+                    name="email" 
+                    placeholder="manager@shioricafe.local" 
                     required
                 >
             </div>

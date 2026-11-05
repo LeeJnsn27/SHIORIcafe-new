@@ -1,12 +1,17 @@
 <?php
 session_start();
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'Cashier') {
+    header("Location: login.php");
+    exit();
+}
 require_once "../backend/config/db.php";
 
 if (empty($_SESSION['csrf_token'])) $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
+// 1. Updated mi.name to mi.item_name
 $query = "
     SELECT o.order_id, o.order_type, t.table_number, o.gross_order_amount, o.preparation_status,
-           string_agg(mi.name || ' (x' || oi.quantity || ')', ', ') AS order_details
+           string_agg(mi.item_name || ' (x' || oi.quantity || ')', ', ') AS order_details
     FROM shioricafe_schema.\"order\" o
     LEFT JOIN shioricafe_schema.\"table\" t ON o.table_id = t.table_id
     LEFT JOIN shioricafe_schema.order_item oi ON o.order_id = oi.order_id
@@ -20,13 +25,19 @@ $orders = $conn->query($query)->fetchAll(PDO::FETCH_ASSOC);
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <title>Active Order Queue</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light p-5">
     <h2>Active Order Queue</h2>
     
+    <!-- 2. Display BOTH success and error messages from session -->
     <?php if (!empty($_SESSION['success_msg'])): ?>
         <div class="alert alert-success"><?php echo htmlspecialchars($_SESSION['success_msg']); unset($_SESSION['success_msg']); ?></div>
+    <?php endif; ?>
+    
+    <?php if (!empty($_SESSION['error_msg'])): ?>
+        <div class="alert alert-danger"><?php echo htmlspecialchars($_SESSION['error_msg']); unset($_SESSION['error_msg']); ?></div>
     <?php endif; ?>
 
     <table class="table table-white shadow-sm mt-3">

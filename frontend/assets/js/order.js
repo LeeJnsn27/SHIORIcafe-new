@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // 2. Render cart items dynamically in the sidebar UI
     function renderCart() {
-        // Remove previously rendered dynamic items
+        if (!orderList) return;
         const itemRows = orderList.querySelectorAll(".cart-item-row");
         itemRows.forEach(row => row.remove());
 
@@ -125,14 +125,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (orderWarning) orderWarning.classList.add("d-none");
 
+            let calculatedTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            // Use 'payload' consistently matching the JSON stringify argument below
             const payload = {
-                tableNumber: tableNumber,
-                paymentMethod: paymentMethod,
-                receiptEmail: receiptEmail,
+                table_number: tableNumber,
+                payment_method: paymentMethod,
+                email: receiptEmail,
+                total_amount: calculatedTotal,
                 items: cart
             };
 
-            // Posts data to your backend checkout/order script
             fetch("backend/api/create-order.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -142,14 +145,14 @@ document.addEventListener("DOMContentLoaded", function () {
             .then(data => {
                 if (data.success) {
                     if (confirmationBanner && confirmationDetails) {
-                        confirmationDetails.innerHTML = `Order <strong>#${data.orderId}</strong> for Table <strong>${tableNumber}</strong> has been confirmed!<br>Total: <strong>₱${parseFloat(data.total).toFixed(2)}</strong>`;
+                        confirmationDetails.innerHTML = `Order <strong>#${data.order_id}</strong> for Table <strong>${tableNumber}</strong> has been confirmed!<br>Total: <strong>₱${parseFloat(data.total_amount).toFixed(2)}</strong>`;
                         confirmationBanner.classList.remove("d-none");
                     }
                     cart = [];
                     localStorage.removeItem("cafe_cart");
                     renderCart();
                 } else {
-                    showWarning(data.error || "Failed to process order.");
+                    showWarning(data.message || data.error || "Failed to process order.");
                 }
             })
             .catch(err => {

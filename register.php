@@ -1,175 +1,166 @@
 <?php
-// Start user session
 session_start();
 
-// Connect to database
-require_once "backend/config/db.php";
+// Connect to PostgreSQL database using backend config
+require_once __DIR__ . '/backend/config/db.php';
 
-/** @var mysqli $conn */
+/** @var PDO $pdo */
 
-$errors = [];
+$error = "";
 $success = "";
 
-// Check if form was submitted
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $full_name = trim($_POST["username"] ?? ""); // Maps the form "Username" field to full_name in DB
+    $email     = trim($_POST["email"] ?? "");
+    $password  = $_POST["password"] ?? "";
 
-    // Get and trim form inputs
-    $full_name        = trim($_POST["full_name"] ?? "");
-    $email            = trim($_POST["email"] ?? "");
-    $password         = $_POST["password"] ?? "";
-    $confirm_password = $_POST["confirm_password"] ?? "";
+    if (empty($full_name) || empty($email) || empty($password)) {
+        $error = "Please fill in all required fields.";
+    } else {
+        try {
+            if (!isset($pdo)) {
+                throw new Exception("Database connection is not initialized.");
+            }
 
-    // Validate required fields and formats
-    if (empty($full_name)) {
-        $errors[] = "Full name is required.";
-    }
+            // Check if email already exists using customer_id instead of non-existent id column
+            $checkStmt = $pdo->prepare("
+                SELECT customer_id 
+                FROM shioricafe_schema.customer 
+                WHERE email = :email 
+                LIMIT 1
+            ");
+            $checkStmt->execute([':email' => $email]);
 
-    if (empty($email)) {
-        $errors[] = "Email is required.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "Please enter a valid email address.";
-    }
+            if ($checkStmt->fetch()) {
+                $error = "An account with that email address already exists.";
+            } else {
+                // Hash password and insert record matching PostgreSQL customer schema
+                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-    if (empty($password)) {
-        $errors[] = "Password is required.";
-    } elseif (strlen($password) < 6) {
-        $errors[] = "Password must be at least 6 characters long.";
-    }
+                $insertStmt = $pdo->prepare("
+                    INSERT INTO shioricafe_schema.customer (full_name, email, password_hash) 
+                    VALUES (:full_name, :email, :password_hash)
+                ");
+                $insertStmt->execute([
+                    ':full_name'     => $full_name,
+                    ':email'         => $email,
+                    ':password_hash' => $hashedPassword
+                ]);
 
-    if ($password !== $confirm_password) {
-        $errors[] = "Passwords do not match.";
-    }
-
-    // Check if email already exists in database
-    if (empty($errors)) {
-        $checkEmailSql = "SELECT id FROM users WHERE email = ?";
-        $stmt = mysqli_prepare($conn, $checkEmailSql);
-        mysqli_stmt_bind_param($stmt, "s", $email);
-        mysqli_stmt_execute($stmt);
-        $result = mysqli_stmt_get_result($stmt);
-
-        if (mysqli_num_rows($result) > 0) {
-            $errors[] = "This email is already registered.";
+                $success = "Account created successfully! You can now <a href='login.php' class='alert-link'>Log In</a>.";
+            }
+        } catch (Exception $e) {
+            $error = "Registration failed: " . $e->getMessage();
         }
-        mysqli_stmt_close($stmt);
-    }
-
-    // Hash password and save new user
-    if (empty($errors)) {
-        // Securely hash password
-        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-        // Insert new record into users table
-        $insertSql = "INSERT INTO users (full_name, email, password, role) VALUES (?, ?, ?, 'customer')";
-        $stmt = mysqli_prepare($conn, $insertSql);
-        mysqli_stmt_bind_param($stmt, "sss", $full_name, $email, $hashedPassword);
-
-        if (mysqli_stmt_execute($stmt)) {
-            $success = "Registration successful! You can now log in.";
-            $full_name = $email = $password = $confirm_password = "";
-        } else {
-            $errors[] = "Something went wrong. Please try again later.";
-        }
-
-        mysqli_stmt_close($stmt);
     }
 }
-
-// Load global header
-require_once "frontend/includes/header.php";
 ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Register | SHIORI Café</title>
 
-<div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-md-6">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="frontend/assets/css/main.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f6f0;
+            color: #2b2b2b;
+        }
+        .register-card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            padding: 2.5rem;
+            max-width: 440px;
+            width: 100%;
+        }
+        .btn-cafe {
+            background-color: #2d4a3e;
+            color: #ffffff;
+            font-weight: 600;
+            border: none;
+        }
+        .btn-cafe:hover {
+            background-color: #1e332a;
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body class="d-flex align-items-center min-vh-100 py-5">
 
-            <div class="p-4 register-card">
-                <h2 class="text-center mb-4">Create an Account</h2>
+<div class="container d-flex justify-content-center">
+    <div class="register-card">
+        <h2 class="fw-bold mb-1 text-center">Create Account</h2>
+        <p class="text-muted mb-4 text-center">Join SHIORI Café to place orders and book seats.</p>
 
-                <!-- Success notification -->
-                <?php if (!empty($success)): ?>
-                    <div class="alert alert-success" role="alert">
-                        <?php echo htmlspecialchars($success); ?>
-                    </div>
-                <?php endif; ?>
+        <?php if (!empty($error)): ?>
+            <div class="alert alert-danger" role="alert">
+                <?php echo htmlspecialchars($error); ?>
+            </div>
+        <?php endif; ?>
 
-                <!-- Error notifications -->
-                <?php if (!empty($errors)): ?>
-                    <div class="alert alert-danger" role="alert">
-                        <ul class="mb-0">
-                            <?php foreach ($errors as $error): ?>
-                                <li><?php echo htmlspecialchars($error); ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                <?php endif; ?>
+        <?php if (!empty($success)): ?>
+            <div class="alert alert-success" role="alert">
+                <?php echo $success; ?>
+            </div>
+        <?php endif; ?>
 
-                <!-- Registration form -->
-                <form action="register.php" method="POST">
-
-                    <div class="mb-3">
-                        <label for="full_name" class="form-label">Full Name</label>
-                        <input
-                            type="text"
-                            class="form-control"
-                            id="full_name"
-                            name="full_name"
-                            value="<?php echo htmlspecialchars($full_name ?? ''); ?>"
-                            placeholder="Enter your full name"
-                        >
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="email" class="form-label">Email Address</label>
-                        <input
-                            type="email"
-                            class="form-control"
-                            id="email"
-                            name="email"
-                            value="<?php echo htmlspecialchars($email ?? ''); ?>"
-                            placeholder="you@example.com"
-                        >
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
-                        <input
-                            type="password"
-                            class="form-control"
-                            id="password"
-                            name="password"
-                            placeholder="At least 6 characters"
-                        >
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="confirm_password" class="form-label">Confirm Password</label>
-                        <input
-                            type="password"
-                            class="form-control"
-                            id="confirm_password"
-                            name="confirm_password"
-                            placeholder="Re-enter your password"
-                        >
-                    </div>
-
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-cafe">Register</button>
-                    </div>
-
-                </form>
-
-                <p class="text-center mt-3 mb-0">
-                    Already have an account? <a href="login.php">Log in here</a>
-                </p>
-
+        <form action="register.php" method="POST">
+            <div class="mb-3">
+                <label for="username" class="form-label">Full Name</label>
+                <input 
+                    type="text" 
+                    class="form-control" 
+                    id="username" 
+                    name="username" 
+                    value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" 
+                    placeholder="e.g. Shiraine Bituin" 
+                    required
+                >
             </div>
 
-        </div>
+            <div class="mb-3">
+                <label for="email" class="form-label">Email Address</label>
+                <input 
+                    type="email" 
+                    class="form-control" 
+                    id="email" 
+                    name="email" 
+                    value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" 
+                    placeholder="user@example.com" 
+                    required
+                >
+            </div>
+
+            <div class="mb-4">
+                <label for="password" class="form-label">Password</label>
+                <input 
+                    type="password" 
+                    class="form-control" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter password" 
+                    required
+                >
+            </div>
+
+            <div class="d-grid mb-3">
+                <button type="submit" class="btn btn-cafe py-2">Sign Up</button>
+            </div>
+
+            <div class="text-center">
+                <small class="text-muted">Already have an account? <a href="login.php" class="text-decoration-none fw-semibold">Log In</a></small>
+            </div>
+        </form>
     </div>
 </div>
 
-<?php
-// Include unified global footer
-require_once "frontend/includes/footer.php";
-?>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,71 +1,109 @@
 <?php
-header("Content-Type: application/json");
-require_once "../config/db.php";
-/** @var mysqli $conn */
+header('Content-Type: application/json');
+session_start();
 
-// Support form submissions
-$guestName  = trim($_POST["guest_name"] ?? $_POST["guestName"] ?? "");
-$guestEmail = trim($_POST["guest_email"] ?? $_POST["guestEmail"] ?? "");
-$seatName   = trim($_POST["nook_type"] ?? $_POST["seatName"] ?? "");
-$resDate    = trim($_POST["reservation_date"] ?? $_POST["reservationDate"] ?? "");
-$startTime  = trim($_POST["reservation_time"] ?? $_POST["reservationStartTime"] ?? "");
-$endTime    = trim($_POST["reservation_end_time"] ?? $_POST["reservationEndTime"] ?? "");
+require_once __DIR__ . '/../config/db.php';
 
-if (empty($guestName) || empty($seatName) || empty($resDate) || empty($startTime) || empty($endTime)) {
-    echo json_encode(["status" => "error", "message" => "Please fill in all required fields including start and end times."]);
-    exit;
-}
+/** @var PDO $pdo */
 
-// Find seat ID if seats table exists
-$seatQuery = mysqli_prepare($conn, "SELECT id FROM seats WHERE seat_name = ? LIMIT 1");
-$seatId = null;
-if ($seatQuery) {
-    mysqli_stmt_bind_param($seatQuery, "s", $seatName);
-    mysqli_stmt_execute($seatQuery);
-    $seatResult = mysqli_stmt_get_result($seatQuery);
-    if ($seat = mysqli_fetch_assoc($seatResult)) {
-        $seatId = $seat['id'];
+try {
+    if (!isset($pdo)) {
+        throw new Exception("Database connection failure.");
     }
-    mysqli_stmt_close($seatQuery);
-}
 
-// Check for 24/7 schedule overlaps: (existing_start < new_end) AND (existing_end > new_start)
-if ($seatId !== null) {
-    $overlapQuery = "SELECT reservation_end_time FROM reservations WHERE seat_id = '$seatId' AND reservation_date = '$resDate' AND ('$startTime' < reservation_end_time AND '$endTime' > reservation_start_time) ORDER BY reservation_end_time DESC LIMIT 1";
-} else {
-    $overlapQuery = "SELECT reservation_end_time FROM reservations WHERE nook_type = '$seatName' AND reservation_date = '$resDate' AND ('$startTime' < reservation_end_time AND '$endTime' > reservation_start_time) ORDER BY reservation_end_time DESC LIMIT 1";
-}
+    $rawInput = file_get_contents('php://input');
+    $data = json_decode($rawInput, true) ?? $_POST;
 
-$overlapResult = mysqli_query($conn, $overlapQuery);
-if ($overlapResult && mysqli_num_rows($overlapResult) > 0) {
-    $conflict = mysqli_fetch_assoc($overlapResult);
-    $suggestedTime = $conflict['reservation_end_time'];
+    $resDate   = trim($data['reservation_date'] ?? date('Y-m-d'));
+    $startTime = trim($data['reservation_time'] ?? '10:00');
+    $endTime   = trim($data['reservation_end_time'] ?? '12:00');
+    $guestName = trim($data['guest_name'] ?? $_SESSION['user_name'] ?? 'Guest Customer');
+    $email     = trim($data['guest_email'] ?? $_SESSION['email'] ?? 'guest@shioricafe.local');
+    $nookSeat  = trim($data['nook_type'] ?? 'Tatami Desk 1');
 
-    // Format time nicely to 12-hour AM/PM (e.g., 3:00 PM)
-    $formattedTime = date("g:i A", strtotime($suggestedTime));
+    if (strlen($startTime) === 5) $startTime .= ':00';
+    if (strlen($endTime) === 5)   $endTime   .= ':00';
+
+    $startAt = "$resDate $startTime";
+    $endAt   = "$resDate $endTime";
+
+    // Map UI seat selection to valid table_id
+    $tableId = 1;
+    if (strpos($nookSeat, '2') !== false) $tableId = 2;
+    elseif (strpos($nookSeat, '3') !== false) $tableId = 3;
+    elseif (strpos($nookSeat, 'Window Nook 1') !== false) $tableId = 4;
+    elseif (strpos($nookSeat, 'Window Nook 2') !== false) $tableId = 5;
+    elseif (strpos($nookSeat, 'Window Nook 3') !== false) $tableId = 6;
+    elseif (strpos($nookSeat, 'Group Table 1') !== false) $tableId = 7;
+    elseif (strpos($nookSeat, 'Group Table 2') !== false) $tableId = 8;
+
+    // Resolve or auto-create customer_id
+    $customerId = $_SESSION['user_id'] ?? $_SESSION['customer_id'] ?? null;
+
+    if (!$customerId) {
+        $stmtCust = $pdo->prepare("SELECT customer_id FROM shioricafe_schema.customer WHERE email = :email LIMIT 1");
+        $stmtCust->execute([':email' => $email]);
+        $existingCust = $stmtCust->fetch();
+
+        if ($existingCust) {
+            $customerId = $existingCust['customer_id'];
+        } else {
+            $defaultHash = password_hash('GuestPass123!', PASSWORD_DEFAULT);
+            $stmtNewCust = $pdo->prepare("
+                INSERT INTO shioricafe_schema.customer (full_name, email, password_hash) 
+                VALUES (:name, :email, :hash) 
+                RETURNING customer_id
+            ");
+            $stmtNewCust->execute([
+                ':name'  => $guestName, 
+                ':email' => $email,
+                ':hash'  => $defaultHash
+            ]);
+            $customerId = $stmtNewCust->fetchColumn();
+        }
+    }
+
+    $sql = "
+        INSERT INTO shioricafe_schema.reservation (
+            customer_id,
+            table_id,
+            party_size,
+            reservation_start_at,
+            reservation_end_at,
+            status,
+            is_walkin
+        ) VALUES (
+            :customer_id,
+            :table_id,
+            1,
+            :start_at,
+            :end_at,
+            'Confirmed',
+            false
+        )
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':customer_id' => $customerId,
+        ':table_id'    => $tableId,
+        ':start_at'    => $startAt,
+        ':end_at'      => $endAt
+    ]);
 
     echo json_encode([
-        "status" => "error",
-        "message" => "This seat is already booked for that time window. The next available time for this seat starts at " . $formattedTime . ".",
-        "suggested_time" => $suggestedTime
+        'status'  => 'success',
+        'success' => true,
+        'message' => 'Nook reserved successfully!'
+    ]);
+    exit;
+
+} catch (Exception $e) {
+    http_response_code(400);
+    echo json_encode([
+        'status'  => 'error',
+        'success' => false,
+        'message' => 'Reservation failed: ' . $e->getMessage()
     ]);
     exit;
 }
-
-// Save reservation
-if ($seatId !== null) {
-    $sql = "INSERT INTO reservations (guest_name, guest_email, seat_id, nook_type, reservation_date, reservation_start_time, reservation_end_time, status)
-            VALUES ('$guestName', '$guestEmail', $seatId, '$seatName', '$resDate', '$startTime', '$endTime', 'Confirmed')";
-} else {
-    $sql = "INSERT INTO reservations (guest_name, guest_email, nook_type, reservation_date, reservation_start_time, reservation_end_time, status)
-            VALUES ('$guestName', '$guestEmail', '$seatName', '$resDate', '$startTime', '$endTime', 'Confirmed')";
-}
-
-if (mysqli_query($conn, $sql)) {
-    echo json_encode(["status" => "success", "success" => true, "message" => "Reservation successfully confirmed!"]);
-} else {
-    echo json_encode(["status" => "error", "message" => "Failed to save reservation: " . mysqli_error($conn)]);
-}
-
-mysqli_close($conn);
-?>

@@ -1,96 +1,32 @@
--- =========================================================
--- SHIORI CAFE - DEMO / SAMPLE SEED DATA
--- Target database: grp10_shioricafedb
--- PostgreSQL schema: shioricafe_schema
---
--- Run AFTER backend/database/schema.sql.
---
--- IMPORTANT:
--- These are DEMONSTRATION records, not a verified physical
--- inventory or final approved production menu. Table numbers
--- are sample identifiers. Menu names, descriptions, and
--- prices are copied from the current services.php menu page.
--- Review/replace sample seating details and catalog before
--- production use.
---
--- This script is safe to run more than once:
--- existing table numbers, category names, and menu item names
--- are left unchanged (including manager-edited values).
---
--- No customer accounts, staff accounts, passwords, orders,
--- reservations, payments, or financial transactions are seeded.
--- Create accounts through the application's secure workflows.
--- =========================================================
+-- =========================================================================
+-- SHIORI Café - Clean Seed Data Script
+-- =========================================================================
 
-BEGIN;
+SET search_path TO shioricafe_schema, public;
 
--- ---------------------------------------------------------
--- 1. SAMPLE SEATING INVENTORY
--- Table types, capacities, and amenities follow the project
--- handoff. TBL-01 to TBL-03 are DEMO table numbers only.
--- ---------------------------------------------------------
+-- 1. Seed Staff / Admin
+INSERT INTO shioricafe_schema.staff (username, password_hash, role) VALUES
+    ('admin', '$2y$10$e0MYzXyjpJS7Pd0RVvHwHeFv5gL3n8jH9k3Yl2xV8zQ3x5m7wK9W6', 'manager'),
+    ('staff_shiraine', '$2y$10$e0MYzXyjpJS7Pd0RVvHwHeFv5gL3n8jH9k3Yl2xV8zQ3x5m7wK9W6', 'barista')
+ON CONFLICT DO NOTHING;
 
-INSERT INTO shioricafe_schema."table" (
-    table_number,
-    table_type,
-    capacity,
-    amenities,
-    operational_status
-)
-VALUES
-    (
-        'TBL-01',
-        'Solo Study Nook',
-        1,
-        ARRAY['Power outlet', 'Desk lamp', 'Quiet zone'],
-        'Available'
-    ),
-    (
-        'TBL-02',
-        'Duo Nook',
-        2,
-        ARRAY['Dual outlets', 'Window view'],
-        'Available'
-    ),
-    (
-        'TBL-03',
-        'Group Study Desk',
-        4,
-        ARRAY['Power strip', 'Whiteboard access'],
-        'Available'
-    )
-ON CONFLICT (table_number) DO NOTHING;
+-- 2. Seed Customers
+INSERT INTO shioricafe_schema.customer (username, email, password_hash) VALUES
+    ('student_baliga', 'baliga@example.com', '$2y$10$e0MYzXyjpJS7Pd0RVvHwHeFv5gL3n8jH9k3Yl2xV8zQ3x5m7wK9W6'),
+    ('worker_sofia', 'sofia@example.com', '$2y$10$e0MYzXyjpJS7Pd0RVvHwHeFv5gL3n8jH9k3Yl2xV8zQ3x5m7wK9W6')
+ON CONFLICT DO NOTHING;
 
--- ---------------------------------------------------------
--- 2. SAMPLE MENU CATEGORIES
--- Category labels are demonstration labels for the existing
--- menu. Drink classification is used by minimum-spend rules.
--- ---------------------------------------------------------
+-- 3. Seed Menu Categories
+INSERT INTO shioricafe_schema.category (category_name, description) VALUES
+    ('Coffee & Espresso', 'Handcrafted artisanal coffees brewed for deep focus.'),
+    ('Teas & Matcha', 'Calming green teas and authentic Japanese matcha lattes.'),
+    ('Pastries & Bakery', 'Freshly baked goods to accompany your study session.')
+ON CONFLICT DO NOTHING;
 
-INSERT INTO shioricafe_schema.category (
-    category_name,
-    is_drink_category
-)
-VALUES
-    ('Drinks', TRUE),
-    ('Food', FALSE)
-ON CONFLICT (category_name) DO NOTHING;
-
--- ---------------------------------------------------------
--- 3. SAMPLE MENU ITEMS
--- Names, descriptions, and prices match services.php.
--- ON CONFLICT DO NOTHING preserves existing catalog edits.
--- ---------------------------------------------------------
-
-INSERT INTO shioricafe_schema.menu_item (
-    category_id,
-    item_name,
-    description,
-    current_price,
-    stock_status,
-    is_active
-)
-SELECT
-    c.category_id,
-    sample.item_name,
-    sample.description,
+-- 4. Seed Menu Items
+INSERT INTO shioricafe_schema.menu_item (category_id, item_name, description, current_price, stock_status, is_active) VALUES
+    (1, 'Signature Shiori Latte', 'Rich espresso with steamed milk and a hint of vanilla.', 140.00, 'AVAILABLE', true),
+    (1, 'Cold Brew Focus', 'Smooth 18-hour slow-steeped cold brew coffee.', 130.00, 'AVAILABLE', true),
+    (2, 'Ceremonial Uji Matcha', 'Authentic whisked Japanese green tea latte.', 160.00, 'AVAILABLE', true),
+    (3, 'Matcha Croissant', 'Flaky butter croissant filled with sweet matcha cream.', 95.00, 'AVAILABLE', true)
+ON CONFLICT DO NOTHING;

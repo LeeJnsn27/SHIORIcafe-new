@@ -1,7 +1,9 @@
 <?php
 // admin/pos.php - Cashier Point of Sale Counter Terminal with Live Nook Timers
-require_once "../backend/auth/auth-guard.php";
-require_once "../backend/config/db.php";
+require_once __DIR__ . '/../backend/auth/auth-guard.php';
+require_role(['admin', 'cashier']); // Enforce Staff Authorization
+
+require_once __DIR__ . '/../backend/config/db.php';
 /** @var PDO $pdo */
 
 $currentPage = basename($_SERVER['PHP_SELF']);
@@ -9,13 +11,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 // Fetch Menu Items from Database
 try {
     $stmt = $pdo->query("
-        SELECT m.*, c.name as category_name 
+        SELECT m.*, c.name as category_name
         FROM shioricafe_schema.menu_item m
         LEFT JOIN shioricafe_schema.category c ON m.category_id = c.category_id
         ORDER BY c.name ASC, m.name ASC
     ");
     $menuItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
+    // Fallback menu items for local testing/fallback
     $menuItems = [
         ['menu_item_id' => 1, 'name' => 'Hojicha Latte', 'price' => 150.00, 'category_name' => 'Coffee & Tea'],
         ['menu_item_id' => 2, 'name' => 'Spanish Latte', 'price' => 140.00, 'category_name' => 'Coffee & Tea'],
@@ -73,11 +76,11 @@ foreach ($menuItems as $item) {
 </head>
 <body class="bg-light">
 
-    <?php require_once "admin-navbar.php"; ?>
+    <?php require_once __DIR__ . "/admin-navbar.php"; ?>
 
     <div class="container-fluid py-4 px-lg-5">
         <div class="row g-4">
-            
+
             <!-- LEFT: MENU PRODUCT CATALOG -->
             <div class="col-lg-7 col-xl-8">
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -88,13 +91,14 @@ foreach ($menuItems as $item) {
                 <?php foreach ($categories as $catName => $items): ?>
                     <h5 class="fw-bold text-muted mb-3 mt-4"><i class="bi bi-tag me-1"></i><?php echo htmlspecialchars($catName); ?></h5>
                     <div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3 pos-category-group">
-                        <?php foreach ($items as $item): 
+                        <?php foreach ($items as $item):
                             $itemId = $item['menu_item_id'] ?? $item['id'];
                             $itemName = $item['name'];
                             $itemPrice = floatval($item['price']);
+                            $jsonItemName = htmlspecialchars(json_encode($itemName), ENT_QUOTES, 'UTF-8');
                         ?>
                             <div class="col pos-item-col" data-name="<?php echo strtolower(htmlspecialchars($itemName)); ?>">
-                                <div class="card pos-menu-card h-100 p-3 text-center" onclick="addToTicket(<?php echo $itemId; ?>, '<?php echo addslashes(htmlspecialchars($itemName)); ?>', <?php echo $itemPrice; ?>)">
+                                <div class="card pos-menu-card h-100 p-3 text-center" onclick="addToTicket(<?php echo $itemId; ?>, <?php echo $jsonItemName; ?>, <?php echo $itemPrice; ?>)">
                                     <div class="fw-bold text-dark"><?php echo htmlspecialchars($itemName); ?></div>
                                     <div class="text-success fw-semibold mt-1">₱<?php echo number_format($itemPrice, 2); ?></div>
                                 </div>
@@ -114,7 +118,7 @@ foreach ($menuItems as $item) {
 
                     <!-- Order Settings & Nook Status -->
                     <div class="row g-2 mb-2">
-                         <div class="col-6">
+                        <div class="col-6">
                             <label class="form-label small fw-semibold">Table / Nook #</label>
                             <select id="posTableNum" class="form-select form-select-sm" onchange="updateNookOccupancyStatus()">
                                 <option value="1">Table 1 (Tatami 1)</option>
@@ -178,7 +182,6 @@ foreach ($menuItems as $item) {
         let ticket = [];
         let liveOccupancyData = {};
 
-        // Fetch active table occupancy & remaining time from API
         function fetchLiveOccupancy() {
             fetch('../backend/api/get-table-occupancy.php')
                 .then(res => res.json())
@@ -208,7 +211,6 @@ foreach ($menuItems as $item) {
             }
         }
 
-        // Poll API every 15 seconds for real-time countdown updates
         fetchLiveOccupancy();
         setInterval(fetchLiveOccupancy, 15000);
 
@@ -294,8 +296,8 @@ foreach ($menuItems as $item) {
 
             const tableNum = document.getElementById('posTableNum')?.value || 1;
             const orderType = document.getElementById('posOrderType')?.value || 'Dine-In';
+            const paymentMethod = document.getElementById('posPaymentMethod')?.value || 'Cash';
 
-            // Map and clean every item to guarantee 'price' and 'quantity' exist
             const cleanedItems = ticket.map(item => {
                 const itemPrice = parseFloat(item.price || item.unit_price || item.item_price || 150.00);
                 const itemQty = parseInt(item.quantity || item.qty || 1);
@@ -307,12 +309,12 @@ foreach ($menuItems as $item) {
                 };
             });
 
-            // Calculate exact total on the frontend
             const total = cleanedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
             const payload = {
                 table_id: tableNum,
                 order_type: orderType,
+                payment_method: paymentMethod,
                 total_amount: total,
                 items: cleanedItems
             };
@@ -331,11 +333,11 @@ foreach ($menuItems as $item) {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    alert('Order #' + data.order_id + ' successfully recorded! Total: ₱' + total.toFixed(2));
-                    if (typeof clearTicket === 'function') clearTicket();
+                    alert('Order #' + (data.order_id || '') + ' successfully recorded! Total: ₱' + total.toFixed(2));
+                    clearTicket();
                     location.reload();
                 } else {
-                    alert('Error: ' + data.message);
+                    alert('Error: ' + (data.message || 'Unknown error'));
                     if (btn) btn.disabled = false;
                 }
             })

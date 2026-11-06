@@ -1,7 +1,7 @@
 <?php
 session_start();
 // 1. Added Cashier Authentication Check
-if (!isset($_SESSION['user_role']) \vert{}\vert{}$_SESSION['user_role'] !== 'Cashier') {
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'Cashier') {
     header("Location: login.php");
     exit();
 }
@@ -36,7 +36,7 @@ $tables =$tables_stmt->fetchAll(PDO::FETCH_ASSOC);
                             <div class="card h-100 shadow-sm border-0 text-center p-3">
                                 <h6 class="fw-bold"><?php echo htmlspecialchars($item['item_name']); ?></h6>
                                 <p class="text-success mb-2">₱<?php echo number_format($item['current_price'], 2); ?></p>
-                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                <button type="button" class="btn btn-sm btn-outline-primary"
                                     onclick="addToCart(<?php echo $item['menu_item_id']; ?>, '<?php echo addslashes($item['item_name']); ?>', <?php echo$item['current_price']; ?>)">
                                     + Add
                                 </button>
@@ -59,20 +59,20 @@ $tables =$tables_stmt->fetchAll(PDO::FETCH_ASSOC);
                     <form action="process_walkin.php" method="POST" id="checkoutForm">
                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                         <div id="cartInputs"></div>
-                        
+
                         <select class="form-select mb-3" name="order_type" required>
                             <option value="" disabled selected>Order Type...</option>
                             <option value="Dine-In">Dine-In</option>
                             <option value="Takeaway">Takeaway</option>
                         </select>
-                        
+
                         <select class="form-select mb-4" name="table_id">
                             <option value="" selected>Select Table (Dine-In)...</option>
                             <?php foreach($tables as$t): ?>
                                 <option value="<?php echo $t['table_id']; ?>"><?php echo $t['table_number']; ?></option>
                             <?php endforeach; ?>
                         </select>
-                        
+
                         <button type="submit" class="btn btn-success w-100 py-2">Submit Order</button>
                     </form>
                 </div>

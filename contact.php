@@ -35,7 +35,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             ");
 
             // 2. Insert inquiry record
-            $sql = "INSERT INTO shioricafe_schema.inquiry (name, email, subject, message, status) 
+            $sql = "INSERT INTO shioricafe_schema.inquiry (name, email, subject, message, status)
                     VALUES (:name, :email, :subject, :message, 'Unread')";
             $stmt = $pdo->prepare($sql);
             $executed = $stmt->execute([
@@ -150,7 +150,8 @@ require_once "frontend/includes/header.php";
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="src/scripts/app.js"></script>
+    <script src="frontend/assets/js/app.js"></script>
+    <script src="frontend/assets/js/chat.js"></script>
     <script src="frontend/assets/js/reservation.js"></script>
 
 </body>

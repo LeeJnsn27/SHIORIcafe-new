@@ -2,105 +2,134 @@
 // Start session and include database connection and auth guard
 require_once "../backend/auth/auth-guard.php";
 require_once "../backend/config/db.php";
-/** @var PDO $pdo */
+/** @var PDO $conn */
+
+// Use Philippine time for all PostgreSQL date calculations.
+// This affects only the current database connection.
+$conn->exec("SET TIME ZONE 'Asia/Manila'");
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 
-try {
-    // 1. Total Sales: Today vs Yesterday
-    $today_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as rev, COUNT(*) as count 
-        FROM shioricafe_schema.\"order\" 
-        WHERE DATE(created_at) = CURRENT_DATE
-    ";
-    $today_stmt = $pdo->query($today_rev_query);
-    $today_res = $today_stmt->fetch(PDO::FETCH_ASSOC);
-    $today_sales = (float)($today_res['rev'] ?? 0.00);
-    $today_orders_count = (int)($today_res['count'] ?? 0);
+// 1. Total Sales: Today vs Yesterday
+// Half-open ranges [start, end); voided orders excluded.
+$today_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev,
+           COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= CURRENT_DATE
+      AND created_at < CURRENT_DATE + 1
+';
+$today_res = $conn->query($today_rev_query)->fetch(PDO::FETCH_ASSOC);
+$today_sales = (float)($today_res['rev'] ?? 0.00);
+$today_orders_count = (int)($today_res['count'] ?? 0);
 
-    $yest_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as rev 
-        FROM shioricafe_schema.\"order\" 
-        WHERE DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'
-    ";
-    $yest_stmt = $pdo->query($yest_rev_query);
-    $yest_res = $yest_stmt->fetch(PDO::FETCH_ASSOC);
-    $yesterday_sales = (float)($yest_res['rev'] ?? 0.00);
+$yest_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= CURRENT_DATE - 1
+      AND created_at < CURRENT_DATE
+';
+$yest_res = $conn->query($yest_rev_query)->fetch(PDO::FETCH_ASSOC);
+$yesterday_sales = (float)($yest_res['rev'] ?? 0.00);
 
-    // Calculate Today vs Yesterday percentage change
-    $sales_diff = $today_sales - $yesterday_sales;
-    $sales_pct_change = ($yesterday_sales > 0) ? ($sales_diff / $yesterday_sales) * 100 : ($today_sales > 0 ? 100 : 0);
+// Calculate Today vs Yesterday percentage change
+$sales_diff = $today_sales - $yesterday_sales;
+$sales_pct_change = ($yesterday_sales > 0)
+    ? ($sales_diff / $yesterday_sales) * 100
+    : ($today_sales > 0 ? 100 : 0);
 
-    // 2. Total Sales: This Week vs Last Week
-    $week_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as rev 
-        FROM shioricafe_schema.\"order\" 
-        WHERE DATE_TRUNC('week', created_at) = DATE_TRUNC('week', CURRENT_DATE)
-    ";
-    $week_sales = (float)$pdo->query($week_rev_query)->fetchColumn();
+// 2. Total Sales: This Week vs Last Week
+// PostgreSQL date_trunc('week') starts on Monday.
+$week_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'week\', CURRENT_DATE)
+      AND created_at < date_trunc(\'week\', CURRENT_DATE)
+                            + INTERVAL \'1 week\'
+';
+$week_sales = (float)(
+    $conn->query($week_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
 
-    $last_week_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as rev 
-        FROM shioricafe_schema.\"order\" 
-        WHERE DATE_TRUNC('week', created_at) = DATE_TRUNC('week', CURRENT_DATE - INTERVAL '1 week')
-    ";
-    $last_week_sales = (float)$pdo->query($last_week_rev_query)->fetchColumn();
-    $week_pct_change = ($last_week_sales > 0) ? (($week_sales - $last_week_sales) / $last_week_sales) * 100 : ($week_sales > 0 ? 100 : 0);
+$last_week_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'week\', CURRENT_DATE)
+                            - INTERVAL \'1 week\'
+      AND created_at < date_trunc(\'week\', CURRENT_DATE)
+';
+$last_week_sales = (float)(
+    $conn->query($last_week_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
 
-    // 3. Total Sales: This Month
-    $month_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as rev 
-        FROM shioricafe_schema.\"order\" 
-        WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
-    ";
-    $month_sales = (float)$pdo->query($month_rev_query)->fetchColumn();
+$week_pct_change = ($last_week_sales > 0)
+    ? (($week_sales - $last_week_sales) / $last_week_sales) * 100
+    : ($week_sales > 0 ? 100 : 0);
 
-    // 4. Total Orders & Pending Orders Count
-    $total_orders_query = "SELECT COUNT(*) FROM shioricafe_schema.\"order\"";
-    $total_orders = (int)$pdo->query($total_orders_query)->fetchColumn();
+// 3. Total Sales: This Month
+$month_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS rev
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND created_at >= date_trunc(\'month\', CURRENT_DATE)
+      AND created_at < date_trunc(\'month\', CURRENT_DATE)
+                            + INTERVAL \'1 month\'
+';
+$month_sales = (float)(
+    $conn->query($month_rev_query)->fetch(PDO::FETCH_ASSOC)['rev'] ?? 0.00
+);
 
-    $pend_query = "
-        SELECT COUNT(*) 
-        FROM shioricafe_schema.\"order\" 
-        WHERE preparation_status IN ('Pending', 'Preparing')
-    ";
-    $pending_orders = (int)$pdo->query($pend_query)->fetchColumn();
+// 4. Total Orders & Pending Orders Count
+// Voided orders are excluded.
+$total_orders_query = '
+    SELECT COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+';
+$total_orders = (int)(
+    $conn->query($total_orders_query)->fetch(PDO::FETCH_ASSOC)['count'] ?? 0
+);
 
-    // 5. Average Order Value (AOV)
-    $all_rev_query = "
-        SELECT COALESCE(SUM(gross_order_amount), 0.00) as total_rev, COUNT(*) as total_count 
-        FROM shioricafe_schema.\"order\"
-    ";
-    $all_rev_res = $pdo->query($all_rev_query)->fetch(PDO::FETCH_ASSOC);
-    $grand_total_rev = (float)($all_rev_res['total_rev'] ?? 0.00);
-    $grand_total_count = (int)($all_rev_res['total_count'] ?? 0);
-    $avg_order_value = ($grand_total_count > 0) ? $grand_total_rev / $grand_total_count : 0.00;
+$pend_stmt = $conn->prepare('
+    SELECT COUNT(*) AS count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+      AND preparation_status IN (?, ?)
+');
+$pend_stmt->execute(['Pending', 'Preparing']);
+$pending_orders = (int)(
+    $pend_stmt->fetch(PDO::FETCH_ASSOC)['count'] ?? 0
+);
 
-    // 6. Net Profit / Profit Margin (Estimated standard cafe margin ~45%)
-    $profit_margin_pct = 45.0;
-    $estimated_net_profit = $month_sales * ($profit_margin_pct / 100);
+// 5. Average Order Value (AOV)
+$all_rev_query = '
+    SELECT COALESCE(SUM(gross_order_amount), 0) AS total_rev,
+           COUNT(*) AS total_count
+    FROM shioricafe_schema."order"
+    WHERE voided_at IS NULL
+';
+$all_rev_res = $conn->query($all_rev_query)->fetch(PDO::FETCH_ASSOC);
 
-    // 7. Revenue per Employee / RevPASH (Assuming baseline staff count of 4)
-    $active_staff_count = 4;
-    $rev_per_employee = ($active_staff_count > 0) ? $month_sales / $active_staff_count : 0.00;
+$grand_total_rev = (float)($all_rev_res['total_rev'] ?? 0.00);
+$grand_total_count = (int)($all_rev_res['total_count'] ?? 0);
 
-} catch (Exception $e) {
-    $today_sales = 0.00;
-    $today_orders_count = 0;
-    $yesterday_sales = 0.00;
-    $sales_pct_change = 0;
-    $week_sales = 0.00;
-    $last_week_sales = 0.00;
-    $week_pct_change = 0;
-    $month_sales = 0.00;
-    $total_orders = 0;
-    $pending_orders = 0;
-    $avg_order_value = 0.00;
-    $profit_margin_pct = 45.0;
-    $estimated_net_profit = 0.00;
-    $active_staff_count = 4;
-    $rev_per_employee = 0.00;
-}
+$avg_order_value = ($grand_total_count > 0)
+    ? $grand_total_rev / $grand_total_count
+    : 0.00;
+
+// 6. Net Profit / Profit Margin (Estimated standard cafe margin ~45%)
+$profit_margin_pct = 45.0;
+$estimated_net_profit = $month_sales * ($profit_margin_pct / 100);
+
+// 7. Revenue per Employee (Assuming baseline staff count of 4)
+$active_staff_count = 4;
+$rev_per_employee = ($active_staff_count > 0)
+    ? $month_sales / $active_staff_count
+    : 0.00;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -114,6 +143,7 @@ try {
 </head>
 <body>
 
+    <!-- Include Modular Navigation Bar -->
     <?php require_once "admin-navbar.php"; ?>
 
     <!-- Main Content Area with Visual Hierarchy -->

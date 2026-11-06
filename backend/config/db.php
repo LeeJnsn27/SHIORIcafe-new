@@ -1,34 +1,66 @@
 <?php
-// backend/config/db.php
+/**
+ * SHIORI Café - Centralized PostgreSQL Database Connection
+ * Uses PDO and environment variables from the root .env file.
+ */
 
-// Manually parse .env file if present
-$envFile = __DIR__ . '/../../.env';
-if (file_exists($envFile)) {
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue;
-        list($name, $value) = explode('=', $line, 2);
-        $_ENV[trim($name)] = trim($value);
+$projectRoot = dirname(__DIR__, 2);
+$envPath = $projectRoot . '/.env';
+
+// Check if .env exists
+if (!file_exists($envPath)) {
+    die("Database configuration error: .env file not found.");
+}
+
+// Load environment variables
+$env = parse_ini_file($envPath, false, INI_SCANNER_RAW);
+
+if ($env === false) {
+    die("Database configuration error: Unable to read .env file.");
+}
+
+// Get required environment variables
+$required = ['DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+
+foreach ($required as $key) {
+    if (!array_key_exists($key, $env)) {
+        die("Database configuration error: Missing {$key} in .env.");
     }
 }
 
-// Set connection parameters (defaults set to your local PostgreSQL setup)
-$host     = $_ENV['DB_HOST']     ?? 'localhost';
-$port     = $_ENV['DB_PORT']     ?? '5173';
-$dbname   = $_ENV['DB_NAME']     ?? 'grp10_shioricafedb';
-$user     = $_ENV['DB_USER']     ?? 'postgres';
-$password = $_ENV['DB_PASSWORD'] ?? 'mypostGRE'; // <--- PUT YOUR POSTGRES PASSWORD HERE
-$schema   = $_ENV['DB_SCHEMA']   ?? 'shioricafe_schema';
+$host = $env['DB_HOST'];
+$port = $env['DB_PORT'];
+$dbname = $env['DB_NAME'];
+$username = $env['DB_USER'];
+$password = $env['DB_PASSWORD'];
+$sslmode = $env['DB_SSLMODE'] ?? 'require';
+$schema = $env['DB_SCHEMA'] ?? 'shioricafe_schema';
 
 try {
-    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
-    $pdo = new PDO($dsn, $user, $password, [
-        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    // Connect to PostgreSQL using PDO
+    $dsn = "pgsql:host={$host};port={$port};dbname={$dbname};sslmode={$sslmode}";
+
+    $conn = new PDO($dsn, $username, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES => false,
     ]);
-    
-    // Set PostgreSQL schema search path
-    $pdo->exec("SET search_path TO $schema, public");
+
+    // Set the PostgreSQL schema
+    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $schema)) {
+        throw new RuntimeException("Invalid database schema configuration.");
+    }
+
+    $conn->exec('SET search_path TO "' . $schema . '"');
+
+    // Provide $pdo alias for compatibility with any scripts expecting $pdo
+    $pdo = $conn;
+
 } catch (PDOException $e) {
-    die("Database connection failure: " . $e->getMessage());
+    error_log("Database connection error: " . $e->getMessage());
+    die("Database connection failure. Please check your PostgreSQL configuration.");
+} catch (RuntimeException $e) {
+    error_log("Database configuration error: " . $e->getMessage());
+    die("Database configuration failure.");
 }
+?>

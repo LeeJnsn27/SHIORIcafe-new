@@ -1,93 +1,109 @@
 <?php
-session_start();
+// backend/api/create-reservation.php - Study Nook Reservation Creation API
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/db.php';
 
+require_once __DIR__ . '/../auth/auth-guard.php';
+require_once __DIR__ . '/../config/db.php';
 /** @var PDO $pdo */
+
+// Ensure customer is logged in
+if (!is_logged_in()) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Unauthorized. Please log in to reserve a study nook.']);
+    exit();
+}
 
 try {
     $input = file_get_contents('php://input');
     $data  = json_decode($input, true) ?: $_POST;
 
-    $guestName  = trim($data['name'] ?? $data['full_name'] ?? 'Guest Customer');
-    $guestEmail = trim($data['email'] ?? 'guest@shioricafe.local');
-    $guestPhone = trim($data['phone'] ?? '09000000000');
+    $customerId = get_current_user_id();
+    $tableId    = intval($data['table_id'] ?? 0);
+    $date       = trim($data['reservation_date'] ?? $data['date'] ?? '');
+    $startTime  = trim($data['reservation_time'] ?? $data['startTime'] ?? '');
+    $duration   = intval($data['duration_hours'] ?? 2);
+    $partySize  = intval($data['party_size'] ?? 1);
 
-    // Resolve or create customer
-    $customerId = $_SESSION['customer_id'] ?? null;
-    if (!$customerId) {
-        $custStmt = $pdo->prepare("SELECT customer_id FROM shioricafe_schema.customer WHERE email = :email LIMIT 1");
-        $custStmt->execute([':email' => $guestEmail]);
-        $existingId = $custStmt->fetchColumn();
-
-        if ($existingId) {
-            $customerId = $existingId;
-        } else {
-            $insCust = $pdo->prepare("
-                INSERT INTO shioricafe_schema.customer (full_name, email, phone) 
-                VALUES (:name, :email, :phone) 
-                RETURNING customer_id
-            ");
-            $insCust->execute([
-                ':name'  => $guestName,
-                ':email' => $guestEmail,
-                ':phone' => $guestPhone
-            ]);
-            $customerId = $insCust->fetchColumn();
-        }
+    if ($tableId <= 0 || empty($date) || empty($startTime)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Table, date, and start time are required.']);
+        exit();
     }
-    if (!$customerId) { $customerId = 1; }
 
-    // Parse inputs
-    $tableId   = intval($data['table_id'] ?? $data['nook_id'] ?? 1);
-    $partySize = intval($data['party_size'] ?? $data['guests'] ?? 1);
-    
-    $resDate   = trim($data['reservation_date'] ?? $data['date'] ?? date('Y-m-d'));
-    $startTime = trim($data['reservation_time'] ?? $data['time'] ?? '12:00');
-    $duration  = intval($data['duration_hours'] ?? $data['duration'] ?? 2);
-    if ($duration <= 0) { $duration = 2; }
+    // Set timezone and calculate timestamps
+    $timezone = new DateTimeZone("Asia/Manila");
+    $startDateTime = new DateTime("$date $startTime", $timezone);
+    $startAtStr = $startDateTime->format('Y-m-d H:i:s');
 
-    $startTimestamp = strtotime("$resDate $startTime");
-    if (!$startTimestamp) { $startTimestamp = time(); }
-    
-    $startAt = date('Y-m-d H:i:s', $startTimestamp);
-    $endAt   = date('Y-m-d H:i:s', strtotime("+{$duration} hours", $startTimestamp));
+    $endDateTime = clone $startDateTime;
+    $endDateTime->modify("+{$duration} hours");
+    $endAtStr = $endDateTime->format('Y-m-d H:i:s');
 
-    // Insert Reservation
+    $pdo->beginTransaction();
+
+    // Check for overlapping confirmed reservations on the same table
+    $conflictStmt = $pdo->prepare("
+        SELECT reservation_id
+        FROM shioricafe_schema.reservation
+        WHERE table_id = :table_id
+          AND status IN ('Confirmed', 'Adjustment_Pending', 'Occupied')
+          AND reservation_start_at < :end_at
+          AND reservation_end_at > :start_at
+        LIMIT 1
+    ");
+    $conflictStmt->execute([
+        ':table_id' => $tableId,
+        ':start_at' => $startAtStr,
+        ':end_at'   => $endAtStr
+    ]);
+
+    if ($conflictStmt->fetch()) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'Selected table is already reserved for this timeslot. Please choose another time or nook.']);
+        exit();
+    }
+
+    // Insert reservation record
     $stmt = $pdo->prepare("
         INSERT INTO shioricafe_schema.reservation (
-            customer_id, table_id, party_size, reservation_start_at, reservation_end_at, status, is_walkin, required_minimum_amount
+            customer_id, table_id, reservation_start_at, reservation_end_at, status, party_size, created_at
         ) VALUES (
-            :cid, :tid, :party, :start_at, :end_at, 'Confirmed', false, 0.00
+            :customer_id, :table_id, :start_at, :end_at, 'Confirmed', :party_size, CURRENT_TIMESTAMP
         ) RETURNING reservation_id
     ");
 
     $stmt->execute([
-        ':cid'      => $customerId,
-        ':tid'      => $tableId,
-        ':party'    => $partySize,
-        ':start_at' => $startAt,
-        ':end_at'   => $endAt
+        ':customer_id' => $customerId,
+        ':table_id'    => $tableId,
+        ':start_at'    => $startAtStr,
+        ':end_at'      => $endAtStr,
+        ':party_size'  => $partySize
     ]);
 
     $reservationId = $stmt->fetchColumn();
 
+    if (!$reservationId) {
+        throw new Exception("Failed to record reservation.");
+    }
+
+    $pdo->commit();
+
     echo json_encode([
+        'success'        => true,
         'status'         => 'success',
-        'message'        => 'Reservation created successfully!',
+        'message'        => 'Study nook reservation confirmed successfully!',
         'reservation_id' => $reservationId
     ]);
 
 } catch (Exception $e) {
-    http_response_code(400);
-    $msg = $e->getMessage();
-    
-    if (strpos($msg, 'ex_reservation_no_overlap') !== false || strpos($msg, '23P01') !== false) {
-        $msg = "This table is already reserved for the selected timeslot.";
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
     }
 
+    http_response_code(500);
     echo json_encode([
-        'status'  => 'error',
-        'message' => $msg
+        'success' => false,
+        'message' => 'Reservation error: ' . $e->getMessage()
     ]);
 }

@@ -1,9 +1,15 @@
 <?php
-session_start();
+// backend/api/get-table-occupancy.php - Live Table Occupancy & Countdown API
 header('Content-Type: application/json');
-require_once __DIR__ . '/../config/db.php';
 
+require_once __DIR__ . '/../auth/auth-guard.php';
+require_role(['admin', 'cashier']); // Restrict access to staff
+
+require_once __DIR__ . '/../config/db.php';
 /** @var PDO $pdo */
+
+// Set default timezone for consistent time delta calculation
+date_default_timezone_set('Asia/Manila');
 
 try {
     // Query active (Confirmed) reservations that encompass the current timestamp
@@ -25,7 +31,7 @@ try {
         $tableId = intval($row['table_id']);
         $endTimestamp = strtotime($row['reservation_end_at']);
         $diffSeconds = $endTimestamp - $now;
-        $remainingMinutes = max(0, ceil($diffSeconds / 60));
+        $remainingMinutes = max(0, (int)ceil($diffSeconds / 60));
 
         $occupancyMap[$tableId] = [
             'occupied' => true,

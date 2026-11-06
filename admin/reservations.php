@@ -26,7 +26,6 @@ function sendReservationEmail($toEmail, $guestName, $subject, $messageBody) {
     </div>
     ";
 
-    // Standard PHP mail() execution (Requires configured sendmail/SMTP in XAMPP for live external delivery)
     return @mail($toEmail, $subject, $htmlBody, $headers);
 }
 
@@ -37,9 +36,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
     try {
         // Fetch guest details before updating to send email
         $infoStmt = $pdo->prepare("
-            SELECT r.*, c.full_name as guest_name, c.email as guest_email 
-            FROM shioricafe_schema.reservation r 
-            LEFT JOIN shioricafe_schema.customer c ON r.customer_id = c.customer_id 
+            SELECT r.*, c.full_name as guest_name, c.email as guest_email
+            FROM shioricafe_schema.reservation r
+            LEFT JOIN shioricafe_schema.customer c ON r.customer_id = c.customer_id
             WHERE r.reservation_id = :id OR r.id = :id
         ");
         $infoStmt->execute([':id' => $resId]);
@@ -52,8 +51,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             $reason = trim($_POST['cancellation_reason'] ?? 'No reason provided');
 
             $stmt = $pdo->prepare("
-                UPDATE shioricafe_schema.reservation 
-                SET status = 'Cancelled', cancellation_reason = :reason 
+                UPDATE shioricafe_schema.reservation
+                SET status = 'Cancelled', cancellation_reason = :reason, updated_at = NOW()
                 WHERE reservation_id = :id OR id = :id
             ");
             $stmt->execute([':reason' => $reason, ':id' => $resId]);
@@ -76,10 +75,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             $endAt   = date('Y-m-d H:i:s', strtotime("+2 hours", $startTimestamp));
 
             $stmt = $pdo->prepare("
-                UPDATE shioricafe_schema.reservation 
-                SET reservation_start_at = :start_at, 
-                    reservation_end_at = :end_at, 
-                    cancellation_reason = :reason 
+                UPDATE shioricafe_schema.reservation
+                SET reservation_start_at = :start_at,
+                    reservation_end_at = :end_at,
+                    cancellation_reason = :reason,
+                    updated_at = NOW()
                 WHERE reservation_id = :id OR id = :id
             ");
             $stmt->execute([
@@ -100,7 +100,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             }
         }
     } catch (Exception $e) {
-        // Log errors if necessary
+        error_log("Reservation action error: " . $e->getMessage());
     }
 
     header("Location: reservations.php");
@@ -110,11 +110,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
 // Fetch reservations using PDO
 try {
     $stmt = $pdo->query("
-        SELECT r.*, c.full_name as guest_name, c.email as guest_email 
-        FROM shioricafe_schema.reservation r 
-        LEFT JOIN shioricafe_schema.customer c ON r.customer_id = c.customer_id 
+        SELECT r.*, c.full_name as guest_name, c.email as guest_email
+        FROM shioricafe_schema.reservation r
+        LEFT JOIN shioricafe_schema.customer c ON r.customer_id = c.customer_id
         ORDER BY r.reservation_start_at DESC
-    "); 
+    ");
     $reservations = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     try {
@@ -137,6 +137,7 @@ try {
 </head>
 <body>
 
+    <!-- Unified Admin Navigation Bar -->
     <?php require_once "admin-navbar.php"; ?>
 
     <div class="container py-5">
@@ -158,19 +159,19 @@ try {
                     </thead>
                     <tbody>
                         <?php if (!empty($reservations)): ?>
-                            <?php foreach ($reservations as $reservation): 
+                            <?php foreach ($reservations as $reservation):
                                 $id = $reservation['reservation_id'] ?? $reservation['id'] ?? 0;
                                 $tableId = $reservation['table_id'] ?? '1';
                                 $nookName = $reservation['nook_name'] ?? ("Table / Nook #" . $tableId);
                                 $nookType = $reservation['nook_type'] ?? 'Standard Nook';
                                 $guestName = $reservation['guest_name'] ?? $reservation['name'] ?? 'Guest';
                                 $guestEmail = $reservation['guest_email'] ?? $reservation['email'] ?? '';
-                                
+
                                 $startAt = $reservation['reservation_start_at'] ?? $reservation['created_at'] ?? null;
                                 $resDate = $startAt ? date('Y-m-d', strtotime($startAt)) : ($reservation['reservation_date'] ?? '');
                                 $resTime = $startAt ? date('H:i', strtotime($startAt)) : ($reservation['reservation_time'] ?? '');
                                 $displayTime = $startAt ? date('h:i A', strtotime($startAt)) : $resTime;
-                                
+
                                 $status = $reservation['status'] ?? 'Confirmed';
                                 $reason = $reservation['cancellation_reason'] ?? '';
                             ?>

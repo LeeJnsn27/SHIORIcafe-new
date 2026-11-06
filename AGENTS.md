@@ -1,3 +1,4 @@
+
 # AGENTS.md — Shiori Café (栞)
 
 ## 1. Project overview

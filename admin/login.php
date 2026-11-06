@@ -1,69 +1,65 @@
 <?php
+// Start session
 session_start();
 
-// Connect to PostgreSQL database using backend config
-require_once __DIR__ . '/../backend/config/db.php';
+// Skip login if already an active Manager
+if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'Manager') {
+    header("Location: index.php");
+    exit();
+}
 
-/** @var PDO $pdo */
+// Connect to database
+require_once "../backend/config/db.php";
+
+/** @var PDO $conn */
 
 $error = "";
 
+// Process form submission
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $email = trim($_POST["email"] ?? "");
+
+    $email    = trim($_POST["email"] ?? "");
     $password = $_POST["password"] ?? "";
 
     if (empty($email) || empty($password)) {
         $error = "Please enter both email and password.";
     } else {
         try {
-            if (isset($pdo)) {
-                // Query the staff table using email
-                $stmt = $pdo->prepare("
-                    SELECT staff_id, email, password_hash, role 
-                    FROM shioricafe_schema.staff 
-                    WHERE email = :email
-                    LIMIT 1
-                ");
-                $stmt->execute([':email' => $email]);
-                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Query staff record by email (unique index is on LOWER(email))
+            $stmt = $conn->prepare(
+                "SELECT staff_id, full_name, email, role, password_hash
+                 FROM shioricafe_schema.staff
+                 WHERE LOWER(email) = LOWER(:email)"
+            );
+            $stmt->execute([":email" => $email]);
+            $staff = $stmt->fetch();
+        } catch (PDOException $e) {
+            error_log("Staff login query failed: " . $e->getMessage());
+            $staff = false;
+            $error = "Something went wrong. Please try again later.";
+        }
 
-                $role = '';
-                $staffId = null;
+        if ($error === "") {
+            // Verify password hash
+            if ($staff && password_verify($password, $staff["password_hash"])) {
 
-                if ($user && (password_verify($password, $user['password_hash']) || $password === 'password')) {
-                    $role = $user['role'] ?? 'Cashier';
-                    $staffId = $user['staff_id'];
-                } elseif ($email === 'cashier@shioricafe.local') {
-                    // Fallback for Cashier test account
-                    $role = 'Cashier';
-                    $staffId = 2;
-                } elseif ($email === 'manager@shioricafe.local' || $email === 'admin@shioricafe.local') {
-                    // Fallback for Manager/Admin test accounts
-                    $role = 'Manager';
-                    $staffId = 1;
+                // Restrict this admin area strictly to Managers
+                if ($staff["role"] !== "Manager") {
+                    $error = "Access denied. Manager credentials required.";
+                } else {
+                    // Prevent session fixation
+                    session_regenerate_id(true);
+
+                    $_SESSION["user_id"]   = $staff["staff_id"];
+                    $_SESSION["user_name"] = $staff["full_name"];
+                    $_SESSION["user_role"] = "Manager";
+
+                    header("Location: index.php");
+                    exit();
                 }
-
-                if (!empty($role)) {
-                    $normalizedRole = strtolower(trim($role));
-
-                    // Store Staff Session Information
-                    $_SESSION['staff_id']   = $staffId;
-                    $_SESSION['staff_role'] = $role;
-                    $_SESSION['user_role']  = $normalizedRole;
-
-                    // Role-Based Redirection
-                    if (in_array($normalizedRole, ['cashier', 'staff'])) {
-                        header("Location: orders.php");
-                    } else {
-                        header("Location: index.php");
-                    }
-                    exit;
-                }
+            } else {
+                $error = "Invalid email or password.";
             }
-
-            $error = "Invalid admin credentials.";
-        } catch (Exception $e) {
-            $error = "Login error: " . $e->getMessage();
         }
     }
 }
@@ -74,78 +70,68 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Login | SHIORI Café</title>
+
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #1e293b;
-            color: #f8fafc;
-        }
-        .admin-card {
-            background: #0f172a;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            padding: 2.5rem;
-            max-width: 420px;
-            width: 100%;
-        }
-        .btn-admin {
-            background-color: #059669;
-            color: #ffffff;
-            font-weight: 600;
-            border: none;
-        }
-        .btn-admin:hover {
-            background-color: #047857;
-            color: #ffffff;
-        }
-    </style>
+    <link rel="stylesheet" href="../frontend/assets/css/admin.css">
 </head>
-<body class="d-flex align-items-center min-vh-100">
+<body class="admin-login-body">
 
-<div class="container d-flex justify-content-center">
-    <div class="admin-card">
-        <h3 class="fw-bold mb-1 text-center text-white">SHIORI Café Admin</h3>
-        <p class="text-secondary mb-4 text-center">Staff Dashboard Portal</p>
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-auto">
 
-        <?php if (!empty($error)): ?>
-            <div class="alert alert-danger" role="alert">
-                <?php echo htmlspecialchars($error); ?>
+            <div class="login-card">
+                <span class="badge badge-admin mb-3">ADMIN ACCESS</span>
+
+                <h1 class="mb-1">Dashboard Login</h1>
+                <p class="subtitle mb-4">Sign in with your administrator credentials.</p>
+
+                <?php if (!empty($error)): ?>
+                    <div class="alert alert-danger" role="alert">
+                        <?php echo htmlspecialchars($error); ?>
+                    </div>
+                <?php endif; ?>
+
+                <form action="login.php" method="POST">
+
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email Address</label>
+                        <input
+                            type="email"
+                            class="form-control"
+                            id="email"
+                            name="email"
+                            value="<?php echo htmlspecialchars($email ?? ''); ?>"
+                            placeholder="manager@shioricafe.local"
+                            required
+                        >
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="password" class="form-label">Password</label>
+                        <input
+                            type="password"
+                            class="form-control"
+                            id="password"
+                            name="password"
+                            placeholder="Enter your password"
+                            required
+                        >
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-matcha py-2">Log In</button>
+                    </div>
+
+                </form>
             </div>
-        <?php endif; ?>
 
-        <form action="login.php" method="POST">
-            <div class="mb-3">
-                <label for="email" class="form-label text-light">Staff Email</label>
-                <input 
-                    type="email" 
-                    class="form-control" 
-                    id="email" 
-                    name="email" 
-                    placeholder="manager@shioricafe.local" 
-                    required
-                >
-            </div>
-
-            <div class="mb-4">
-                <label for="password" class="form-label text-light">Password</label>
-                <input 
-                    type="password" 
-                    class="form-control" 
-                    id="password" 
-                    name="password" 
-                    placeholder="Enter password" 
-                    required
-                >
-            </div>
-
-            <div class="d-grid">
-                <button type="submit" class="btn btn-admin py-2">Sign In to Dashboard</button>
-            </div>
-        </form>
+        </div>
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

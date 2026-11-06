@@ -12,8 +12,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['id'
 
     try {
         if ($_POST['action'] === 'toggle_status') {
-            $sql = "UPDATE shioricafe_schema.inquiry 
-                    SET status = CASE WHEN status = 'Read' THEN 'Unread' ELSE 'Read' END 
+            $sql = "UPDATE shioricafe_schema.inquiry
+                    SET status = CASE WHEN status = 'Read' THEN 'Unread' ELSE 'Read' END
                     WHERE inquiry_id = :id OR id = :id";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([':id' => $inquiryId]);
@@ -32,7 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['id'
 
 // Fetch inquiries using PDO
 try {
-    $stmt = $pdo->query("SELECT * FROM shioricafe_schema.inquiry ORDER BY created_at DESC"); 
+    $stmt = $pdo->query("SELECT * FROM shioricafe_schema.inquiry ORDER BY created_at DESC");
     $inquiries = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $inquiries = [];
@@ -51,7 +51,8 @@ try {
 </head>
 <body>
 
-   <?php require_once "admin-navbar.php"; ?>
+    <!-- Unified Admin Navigation Bar -->
+    <?php require_once "admin-navbar.php"; ?>
 
     <div class="container py-5">
         <h1 class="admin-page-title">Customer Inquiries</h1>
@@ -73,7 +74,7 @@ try {
                     </thead>
                     <tbody>
                         <?php if (!empty($inquiries)): ?>
-                            <?php foreach ($inquiries as $row): 
+                            <?php foreach ($inquiries as $row):
                                 $id = $row['inquiry_id'] ?? $row['id'] ?? 0;
                                 $name = $row['name'] ?? $row['customer_name'] ?? 'Guest';
                                 $email = $row['email'] ?? 'N/A';

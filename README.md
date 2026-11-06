@@ -306,6 +306,32 @@ SHIORI Café is designed to transition to PostgreSQL with the following target c
 
 **Important:** The database design is documented in `docs/DATABASE_SPEC.md`. The migration scripts and seed data must be finalized and approved before they are executed against a database.
 
+### 3.6 Sample / Seed Data
+
+The repository includes demonstration seed data in:
+
+backend/database/seed.sql
+
+The current seed file contains:
+
+Three demonstration café tables (TBL-01 to TBL-03).
+
+Two menu categories (Drinks and Food).
+
+Eight sample menu items with descriptions and prices.
+
+Important notes:
+
+The seed file targets the planned PostgreSQL database and schema, not the current local MySQL database.
+
+Do not execute this file using phpMyAdmin or MySQL.
+
+The sample tables and menu items are demonstration records and must be reviewed before production use.
+
+Customer accounts, staff accounts, orders, reservations, and payment records are not included.
+
+Do not use the planned PostgreSQL migrations to initialize the current MySQL database.
+
 **Step 1: Create the Database**
 
 Create a PostgreSQL database named:

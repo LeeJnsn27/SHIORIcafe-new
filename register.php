@@ -1,56 +1,79 @@
 <?php
+// Start user session
 session_start();
 
 // Connect to PostgreSQL database using backend config
-require_once __DIR__ . '/backend/config/db.php';
+require_once "backend/config/db.php";
 
-/** @var PDO $pdo */
+/** @var PDO $conn */
 
-$error = "";
-$success = "";
+$errors = [];$success = "";
+$full_name = "";
+$email = "";
 
+// Check if form was submitted
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-    $full_name = trim($_POST["username"] ?? ""); // Maps the form "Username" field to full_name in DB
-    $email     = trim($_POST["email"] ?? "");
-    $password  = $_POST["password"] ?? "";
 
-    if (empty($full_name) || empty($email) || empty($password)) {
-        $error = "Please fill in all required fields.";
-    } else {
+    // Get and trim form inputs (supporting both full_name and username field naming conventions)
+    $full_name        = trim($_POST["full_name"] ?? $_POST["username"] ?? "");
+    $email            = trim($_POST["email"] ?? "");
+    $password         =$_POST["password"] ?? "";
+    $confirm_password = $_POST["confirm_password"] ?? $password;
+
+    // Validate required fields and formats
+    if (empty($full_name)) {$errors[] = "Full name is required.";
+    }
+
+    if (empty($email)) {$errors[] = "Email is required.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {$errors[] = "Please enter a valid email address.";
+    }
+
+    if (empty($password)) {$errors[] = "Password is required.";
+    } elseif (strlen($password) < 6) {$errors[] = "Password must be at least 6 characters long.";
+    }
+
+    if ($password !== $confirm_password) {$errors[] = "Passwords do not match.";
+    }
+
+    // Check if email already exists in database (unique index is on LOWER(email))
+    if (empty($errors)) {
         try {
-            if (!isset($pdo)) {
-                throw new Exception("Database connection is not initialized.");
+            $stmt =$conn->prepare(
+                "SELECT 1 FROM shioricafe_schema.customer WHERE LOWER(email) = LOWER(:email)"
+            );
+            $stmt->execute([":email" => $email]);
+
+            if ($stmt->fetchColumn() !== false) {$errors[] = "This email is already registered.";
             }
+        } catch (PDOException $e) {
+            error_log("Customer email check failed: " . $e->getMessage());$errors[] = "Something went wrong. Please try again later.";
+        }
+    }
 
-            // Check if email already exists using customer_id instead of non-existent id column
-            $checkStmt = $pdo->prepare("
-                SELECT customer_id 
-                FROM shioricafe_schema.customer 
-                WHERE email = :email 
-                LIMIT 1
-            ");
-            $checkStmt->execute([':email' => $email]);
+    // Hash password and save new customer
+    if (empty($errors)) {
+        $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-            if ($checkStmt->fetch()) {
-                $error = "An account with that email address already exists.";
+        try {
+            $stmt =$conn->prepare(
+                "INSERT INTO shioricafe_schema.customer (full_name, email, password_hash)
+                 VALUES (:full_name, :email, :password_hash)"
+            );
+            $stmt->execute([
+                ":full_name"     => $full_name,
+                ":email"         => $email,
+                ":password_hash" => $hashedPassword,
+            ]);
+
+            $success = "Registration successful! You can now <a href='login.php' class='alert-link'>Log In</a>.";
+            $full_name =$email = "";
+        } catch (PDOException $e) {
+            // 23505 = unique violation: another request registered this email first
+            if ($e->getCode() === "23505") {
+                $errors[] = "This email is already registered.";
             } else {
-                // Hash password and insert record matching PostgreSQL customer schema
-                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-                $insertStmt = $pdo->prepare("
-                    INSERT INTO shioricafe_schema.customer (full_name, email, password_hash) 
-                    VALUES (:full_name, :email, :password_hash)
-                ");
-                $insertStmt->execute([
-                    ':full_name'     => $full_name,
-                    ':email'         => $email,
-                    ':password_hash' => $hashedPassword
-                ]);
-
-                $success = "Account created successfully! You can now <a href='login.php' class='alert-link'>Log In</a>.";
+                error_log("Customer registration failed: " . $e->getMessage());$errors[] = "Something went wrong. Please try again later.";
             }
-        } catch (Exception $e) {
-            $error = "Registration failed: " . $e->getMessage();
         }
     }
 }
@@ -99,9 +122,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         <h2 class="fw-bold mb-1 text-center">Create Account</h2>
         <p class="text-muted mb-4 text-center">Join SHIORI Café to place orders and book seats.</p>
 
-        <?php if (!empty($error)): ?>
+        <?php if (!empty($errors)): ?>
             <div class="alert alert-danger" role="alert">
-                <?php echo htmlspecialchars($error); ?>
+                <ul class="mb-0">
+                    <?php foreach ($errors as$error): ?>
+                        <li><?php echo htmlspecialchars($error); ?></li>
+                    <?php endforeach; ?>
+                </ul>
             </div>
         <?php endif; ?>
 
@@ -113,54 +140,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         <form action="register.php" method="POST">
             <div class="mb-3">
-                <label for="username" class="form-label">Full Name</label>
-                <input 
-                    type="text" 
-                    class="form-control" 
-                    id="username" 
-                    name="username" 
-                    value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" 
-                    placeholder="e.g. Shiraine Bituin" 
+                <label for="full_name" class="form-label">Full Name</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="full_name"
+                    name="full_name"
+                    value="<?php echo htmlspecialchars($full_name ?? ''); ?>"
+                    placeholder="e.g. Shiraine Bituin"
                     required
                 >
             </div>
 
             <div class="mb-3">
                 <label for="email" class="form-label">Email Address</label>
-                <input 
-                    type="email" 
-                    class="form-control" 
-                    id="email" 
-                    name="email" 
-                    value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" 
-                    placeholder="user@example.com" 
+                <input
+                    type="email"
+                    class="form-control"
+                    id="email"
+                    name="email"
+                    value="<?php echo htmlspecialchars($email ?? ''); ?>"
+                    placeholder="user@example.com"
+                    required
+                >
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input
+                    type="password"
+                    class="form-control"
+                    id="password"
+                    name="password"
+                    placeholder="At least 6 characters"
                     required
                 >
             </div>
 
             <div class="mb-4">
-                <label for="password" class="form-label">Password</label>
-                <input 
-                    type="password" 
-                    class="form-control" 
-                    id="password" 
-                    name="password" 
-                    placeholder="Enter password" 
-                    required
-                >
-            </div>
-
-            <div class="d-grid mb-3">
-                <button type="submit" class="btn btn-cafe py-2">Sign Up</button>
-            </div>
-
-            <div class="text-center">
-                <small class="text-muted">Already have an account? <a href="login.php" class="text-decoration-none fw-semibold">Log In</a></small>
-            </div>
-        </form>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+                <label for="confirm_password" class="form-label">

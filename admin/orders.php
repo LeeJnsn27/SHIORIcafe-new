@@ -3,9 +3,6 @@ require_once "../backend/auth/auth-guard.php";
 require_once "../backend/config/db.php";
 /** @var PDO $pdo */
 
-$currentPage = basename($_SERVER['PHP_SELF']);
-
-// Handle Admin Actions (Update Status or Cancel & Archive)
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['order_id'])) {
     $orderId = (int)$_POST['order_id'];
 
@@ -14,7 +11,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['ord
         $stmt = $pdo->prepare("UPDATE shioricafe_schema.\"order\" SET preparation_status = :status WHERE order_id = :id");
         $stmt->execute([':status' => $newStatus, ':id' => $orderId]);
     } elseif ($_POST['action'] === 'delete_order') {
-        // Soft-delete / Archive: set preparation_status to 'Cancelled' so the record stays in PostgreSQL
         $stmtOrder = $pdo->prepare("UPDATE shioricafe_schema.\"order\" SET preparation_status = 'Cancelled' WHERE order_id = :id");
         $stmtOrder->execute([':id' => $orderId]);
     }
@@ -23,11 +19,37 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['ord
     exit();
 }
 
-// Fetch all orders using PDO
 try {
-    $orders_query = "SELECT * FROM shioricafe_schema.\"order\" ORDER BY created_at DESC";
-    $stmt = $pdo->query($orders_query);
+    $stmt = $pdo->query("SELECT * FROM shioricafe_schema.\"order\" ORDER BY created_at DESC");
     $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch line items safely using a direct query on order_item
+    foreach ($orders as &$order) {
+        try {
+            $itemStmt = $pdo->prepare("
+                SELECT oi.* 
+                FROM shioricafe_schema.order_item oi 
+                WHERE oi.order_id = :order_id
+            ");
+            $itemStmt->execute([':order_id' => $order['order_id']]);
+            $rawItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Normalize item keys so the view can always read them
+            $formattedItems = [];
+            foreach ($rawItems as $ri) {
+                $formattedItems[] = [
+                    'item_name'  => $ri['item_name_at_purchase'] ?? $ri['item_name'] ?? 'Café Item',
+                    'quantity'   => $ri['quantity'] ?? $ri['qty'] ?? 1,
+                    'unit_price' => $ri['unit_price_at_purchase'] ?? $ri['unit_price'] ?? 0
+                ];
+            }
+            $order['line_items'] = $formattedItems;
+        } catch (Exception $ex) {
+            $order['line_items'] = [];
+        }
+    }
+    unset($order);
+
 } catch (Exception $e) {
     $orders = [];
 }
@@ -44,7 +66,7 @@ try {
 </head>
 <body>
 
-   <?php require_once "admin-navbar.php"; ?>
+    <?php require_once "admin-navbar.php"; ?>
 
     <div class="container py-5">
         <h1 class="admin-page-title">Customer Orders Control</h1>
@@ -55,6 +77,16 @@ try {
                 <?php foreach ($orders as $order): 
                     $status = $order['preparation_status'] ?? 'Pending';
                     $badgeClass = ($status === 'Cancelled') ? 'bg-danger' : (($status === 'Completed') ? 'bg-success' : 'bg-warning text-dark');
+                    
+                    $orderItems = $order['line_items'] ?? [];
+                    $amount = floatval($order['gross_order_amount'] ?? 0);
+
+                    // Fallback amount calculation if gross amount is zero
+                    if ($amount <= 0 && !empty($orderItems)) {
+                        foreach ($orderItems as $it) {
+                            $amount += floatval($it['unit_price']) * intval($it['quantity']);
+                        }
+                    }
                 ?>
                     <div class="col">
                         <div class="admin-card order-card h-100 p-4">
@@ -68,14 +100,30 @@ try {
 
                             <div class="mb-3">
                                 <span class="text-muted small">Order Type:</span>
-                                <div class="fw-semibold"><?php echo htmlspecialchars($order['order_type'] ?? 'Dine-In'); ?></div>
+                                <div class="fw-semibold mb-2"><?php echo htmlspecialchars($order['order_type'] ?? 'Dine-In'); ?></div>
+
+                                <span class="text-muted small">Ordered Items:</span>
+                                <ul class="list-unstyled small bg-light p-2 rounded mb-0">
+                                    <?php if (!empty($orderItems)): ?>
+                                        <?php foreach ($orderItems as $item): 
+                                            $lineTotal = floatval($item['unit_price']) * intval($item['quantity']);
+                                        ?>
+                                            <li class="d-flex justify-content-between border-bottom pb-1 mb-1">
+                                                <span><?php echo htmlspecialchars($item['item_name']); ?> <span class="text-muted">x<?php echo $item['quantity']; ?></span></span>
+                                                <span class="fw-semibold">₱<?php echo number_format($lineTotal, 2); ?></span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
+                                        <li class="text-muted fst-italic">No line items found.</li>
+                                    <?php endif; ?>
+                                </ul>
                             </div>
 
                             <div class="order-footer d-flex justify-content-between align-items-center border-top pt-3 mt-auto">
                                 <div>
-                                    <div class="order-total fs-5 fw-bold text-success">₱<?php echo number_format($order['gross_order_amount'] ?? 0, 2); ?></div>
+                                    <div class="order-total fs-5 fw-bold text-success">₱<?php echo number_format($amount, 2); ?></div>
                                     <div class="order-payment text-muted small">
-                                        <?php echo date('M d, Y h:i A', strtotime($order['created_at'])); ?>
+                                        <?php echo date('M d, Y h:i A', strtotime($order['created_at'] ?? 'now')); ?>
                                     </div>
                                 </div>
                                 <div class="d-flex gap-2">

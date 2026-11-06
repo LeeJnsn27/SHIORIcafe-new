@@ -114,19 +114,19 @@ foreach ($menuItems as $item) {
 
                     <!-- Order Settings & Nook Status -->
                     <div class="row g-2 mb-2">
-                       <div class="col-6">
-    <label class="form-label small fw-semibold">Table / Nook #</label>
-    <select id="posTableNum" class="form-select form-select-sm" onchange="updateNookOccupancyStatus()">
-        <option value="1">Table 1 (Tatami 1)</option>
-        <option value="2">Table 2 (Tatami 2)</option>
-        <option value="3">Table 3 (Tatami 3)</option>
-        <option value="4">Table 4 (Window 1)</option>
-        <option value="5">Table 5 (Window 2)</option>
-        <option value="6">Table 6 (Window 3)</option>
-        <option value="7">Table 7 (Group 1)</option>
-        <option value="8">Table 8 (Group 2)</option>
-    </select>
-</div>
+                         <div class="col-6">
+                            <label class="form-label small fw-semibold">Table / Nook #</label>
+                            <select id="posTableNum" class="form-select form-select-sm" onchange="updateNookOccupancyStatus()">
+                                <option value="1">Table 1 (Tatami 1)</option>
+                                <option value="2">Table 2 (Tatami 2)</option>
+                                <option value="3">Table 3 (Tatami 3)</option>
+                                <option value="4">Table 4 (Window 1)</option>
+                                <option value="5">Table 5 (Window 2)</option>
+                                <option value="6">Table 6 (Window 3)</option>
+                                <option value="7">Table 7 (Group 1)</option>
+                                <option value="8">Table 8 (Group 2)</option>
+                            </select>
+                        </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Order Type</label>
                             <select id="posOrderType" class="form-select form-select-sm">
@@ -287,22 +287,41 @@ foreach ($menuItems as $item) {
         });
 
         function processPOSTransaction() {
-            if (ticket.length === 0) return;
+            if (!ticket || ticket.length === 0) {
+                alert('Your cart/ticket is empty!');
+                return;
+            }
 
-            const tableNum = document.getElementById('posTableNum').value || 1;
-            const orderType = document.getElementById('posOrderType').value;
-            const total = ticket.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const tableNum = document.getElementById('posTableNum')?.value || 1;
+            const orderType = document.getElementById('posOrderType')?.value || 'Dine-In';
+
+            // Map and clean every item to guarantee 'price' and 'quantity' exist
+            const cleanedItems = ticket.map(item => {
+                const itemPrice = parseFloat(item.price || item.unit_price || item.item_price || 150.00);
+                const itemQty = parseInt(item.quantity || item.qty || 1);
+                return {
+                    id: item.id || item.menu_item_id || 1,
+                    name: item.name || item.item_name || 'Café Item',
+                    price: itemPrice,
+                    quantity: itemQty
+                };
+            });
+
+            // Calculate exact total on the frontend
+            const total = cleanedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
             const payload = {
                 table_id: tableNum,
                 order_type: orderType,
                 total_amount: total,
-                items: ticket
+                items: cleanedItems
             };
 
             const btn = document.getElementById('btnProcessPayment');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+            }
 
             fetch('../backend/api/pos-checkout.php', {
                 method: 'POST',
@@ -312,17 +331,24 @@ foreach ($menuItems as $item) {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    alert('Order #' + data.order_id + ' successfully recorded!');
-                    clearTicket();
+                    alert('Order #' + data.order_id + ' successfully recorded! Total: ₱' + total.toFixed(2));
+                    if (typeof clearTicket === 'function') clearTicket();
+                    location.reload();
                 } else {
                     alert('Error: ' + data.message);
+                    if (btn) btn.disabled = false;
                 }
             })
             .catch(err => {
+                console.error("Fetch Error:", err);
                 alert('Server connection error. Please try again.');
+                if (btn) btn.disabled = false;
             })
             .finally(() => {
-                btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Complete & Print Receipt';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Complete & Print Receipt';
+                }
             });
         }
     </script>

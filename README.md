@@ -88,3 +88,100 @@ The detailed and authoritative business rules are documented in `docs/BUSINESS_R
 Ensure the PostgreSQL PDO extension (`pdo_pgsql`) is enabled in your `php.ini`.
 ```bash
 php -m
+```
+
+### 2.2 Required Accounts
+- **Neon:** Hosting the PostgreSQL database (if remote).
+- **PayMongo:** Testing QR Ph payment integration.
+- **Google:** Supporting reservation reminder emails through Google Apps Script.
+
+---
+
+## 3. Installation and Setup
+
+### 3.1 Clone the Repository
+```bash
+git clone <repository-url>
+cd SHIORIcafe
+```
+
+### 3.2 Configure the Environment
+Copy the example environment file and configure your local settings:
+```bash
+cp .env.example .env
+```
+*(Do not commit the `.env` file to the repository.)*
+
+### 3.3 PostgreSQL Database Setup
+SHIORI Café uses PostgreSQL with the following target configuration:
+- **Database Name:** `grp10_shioricafedb`
+- **Schema Name:** `shioricafe_schema`
+
+**Step 1: Create the Database & Schema**
+Connect to PostgreSQL and run:
+```sql
+CREATE DATABASE grp10_shioricafedb;
+\c grp10_shioricafedb;
+CREATE SCHEMA IF NOT EXISTS shioricafe_schema;
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+```
+
+**Step 2: Run Database Migrations & Seed Data**
+Execute the SQL scripts in dependency order from `backend/database/migrations/`, followed by `backend/database/seed.sql`. Use the direct database connection for setup.
+
+---
+
+## 4. Configuration
+
+### 4.1 Database Connection (`backend/config/db.php`)
+The application connects to PostgreSQL using PHP PDO. It utilizes exception-based error handling and prepared statements for security.
+
+Example PDO setup (loaded securely from `.env`):
+```php
+$dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
+$options = [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+];
+$pdo = new PDO($dsn, $username, $password, $options);
+```
+
+### 4.2 PayMongo & Webhooks
+1. Use PayMongo **test mode** only.
+2. Configure the test secret key and webhook secret in `.env`.
+3. Verify payment confirmations strictly on the server side via webhooks.
+
+---
+
+## 5. Running the Application
+
+1. Place the `SHIORIcafe` folder inside your XAMPP `htdocs` directory.
+2. Start Apache via the XAMPP Control Panel.
+3. Ensure your local PostgreSQL server is running.
+4. Open a web browser and navigate to: `http://localhost/SHIORIcafe/`
+
+---
+
+## 6. Legacy Database (Archive)
+Earlier versions of SHIORI Café used MySQL/MySQLi. The legacy SQL scripts are retained in `backend/database/archive/` for historical reference only and **must not** be executed against the new PostgreSQL architecture.
+
+---
+
+## 7. Security Considerations
+- Store passwords using `password_hash()` and verify with `password_verify()`.
+- Use PDO prepared statements to prevent SQL injection.
+- Apply strict role-based access control (RBAC) to protected endpoints.
+- Store API keys, tokens, and DB credentials exclusively in environment variables.
+
+---
+
+## 8. Project Documentation
+- `AGENTS.md` - Development instructions.
+- `docs/BUSINESS_RULES.md` - Detailed café policies and reservation logic.
+- `docs/DATABASE_SPEC.md` - PostgreSQL DB entities and relationships.
+- `docs/USER_ROLES.md` - User roles and permissions structure.
+
+---
+
+## 9. License and Project Information
+SHIORI Café is an academic software development project intended for educational and demonstration purposes as part of the team's academic requirements.

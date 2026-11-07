@@ -6,24 +6,35 @@ require_once "../backend/config/db.php";
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 
-// Fetch Menu Items from Database
+// Fetch sellable menu items (same availability rule as backend/api/pos-checkout.php)
+$menuError = false;
 try {
     $stmt = $pdo->query("
-        SELECT m.*, c.name as category_name 
+        SELECT m.menu_item_id, m.item_name AS name, m.current_price AS price, c.category_name
         FROM shioricafe_schema.menu_item m
-        LEFT JOIN shioricafe_schema.category c ON m.category_id = c.category_id
-        ORDER BY c.name ASC, m.name ASC
+        JOIN shioricafe_schema.category c ON c.category_id = m.category_id
+        WHERE m.is_active = TRUE
+          AND m.stock_status = 'In Stock'
+        ORDER BY c.category_name ASC, m.item_name ASC
     ");
     $menuItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
-    $menuItems = [
-        ['menu_item_id' => 1, 'name' => 'Hojicha Latte', 'price' => 150.00, 'category_name' => 'Coffee & Tea'],
-        ['menu_item_id' => 2, 'name' => 'Spanish Latte', 'price' => 140.00, 'category_name' => 'Coffee & Tea'],
-        ['menu_item_id' => 3, 'name' => 'Genmaicha', 'price' => 130.00, 'category_name' => 'Coffee & Tea'],
-        ['menu_item_id' => 4, 'name' => 'Yuzu Honey Tea', 'price' => 135.00, 'category_name' => 'Coffee & Tea'],
-        ['menu_item_id' => 5, 'name' => 'Dorayaki', 'price' => 110.00, 'category_name' => 'Pastries'],
-        ['menu_item_id' => 6, 'name' => 'Onigiri', 'price' => 95.00, 'category_name' => 'Snacks'],
-    ];
+    error_log('admin/pos.php menu query failed: ' . $e->getMessage());
+    $menuItems = [];
+    $menuError = true;
+}
+
+// Fetch tables that can be assigned to a dine-in walk-in
+try {
+    $tables = $pdo->query("
+        SELECT table_id, table_number, table_type, capacity
+        FROM shioricafe_schema.\"table\"
+        WHERE operational_status = 'Available'
+        ORDER BY table_number ASC
+    ")->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    error_log('admin/pos.php table query failed: ' . $e->getMessage());
+    $tables = [];
 }
 
 $categories = [];
@@ -85,6 +96,12 @@ foreach ($menuItems as $item) {
                     <input type="text" id="posSearch" class="form-control w-50" placeholder="Search menu item...">
                 </div>
 
+                <?php if ($menuError): ?>
+                    <div class="alert alert-danger">The menu could not be loaded. Reload the page or contact a Manager.</div>
+                <?php elseif (!$menuItems): ?>
+                    <div class="alert alert-warning">No menu items are available to sell right now.</div>
+                <?php endif; ?>
+
                 <?php foreach ($categories as $catName => $items): ?>
                     <h5 class="fw-bold text-muted mb-3 mt-4"><i class="bi bi-tag me-1"></i><?php echo htmlspecialchars($catName); ?></h5>
                     <div class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3 pos-category-group">
@@ -114,25 +131,26 @@ foreach ($menuItems as $item) {
 
                     <!-- Order Settings & Nook Status -->
                     <div class="row g-2 mb-2">
-                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Table / Nook #</label>
+                         <div class="col-6" id="posTableGroup">
+                            <label class="form-label small fw-semibold">Table / Nook</label>
                             <select id="posTableNum" class="form-select form-select-sm" onchange="updateNookOccupancyStatus()">
-                                <option value="1">Table 1 (Tatami 1)</option>
-                                <option value="2">Table 2 (Tatami 2)</option>
-                                <option value="3">Table 3 (Tatami 3)</option>
-                                <option value="4">Table 4 (Window 1)</option>
-                                <option value="5">Table 5 (Window 2)</option>
-                                <option value="6">Table 6 (Window 3)</option>
-                                <option value="7">Table 7 (Group 1)</option>
-                                <option value="8">Table 8 (Group 2)</option>
+                                <?php foreach ($tables as $t): ?>
+                                    <option value="<?php echo (int)$t['table_id']; ?>">
+                                        <?php echo htmlspecialchars($t['table_number'] . ' (' . $t['table_type'] . ', seats ' . $t['capacity'] . ')'); ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Order Type</label>
-                            <select id="posOrderType" class="form-select form-select-sm">
+                            <select id="posOrderType" class="form-select form-select-sm" onchange="updateOrderTypeFields()">
                                 <option value="Dine-In">Dine-In</option>
-                                <option value="Takeout">Takeout</option>
+                                <option value="Takeaway">Takeaway</option>
                             </select>
+                        </div>
+                        <div class="col-12" id="posDurationGroup">
+                            <label class="form-label small fw-semibold" for="posExpectedMinutes">Expected stay (minutes)</label>
+                            <input type="number" id="posExpectedMinutes" class="form-control form-control-sm" min="1" max="1440" step="1" placeholder="Ask the customer, e.g. 90">
                         </div>
                     </div>
 
@@ -191,17 +209,30 @@ foreach ($menuItems as $item) {
                 .catch(err => console.error("Occupancy fetch error:", err));
         }
 
+        // Takeaway has no table or expected stay; Dine-In needs both.
+        function updateOrderTypeFields() {
+            const dineIn = document.getElementById('posOrderType').value === 'Dine-In';
+            document.getElementById('posTableGroup').classList.toggle('d-none', !dineIn);
+            document.getElementById('posDurationGroup').classList.toggle('d-none', !dineIn);
+            updateNookOccupancyStatus();
+        }
+
         function updateNookOccupancyStatus() {
-            const selectedTable = parseInt(document.getElementById('posTableNum').value);
             const badge = document.getElementById('nookStatusBadge');
+            if (document.getElementById('posOrderType').value === 'Takeaway') {
+                badge.classList.add('d-none');
+                return;
+            }
+            const selectedTable = parseInt(document.getElementById('posTableNum').value);
             const info = liveOccupancyData[selectedTable];
 
             if (info && info.occupied) {
                 badge.className = "nook-status-box bg-danger text-white mb-3";
                 badge.innerHTML = `
-                    <div class="fw-bold"><i class="bi bi-person-fill me-1"></i> Occupied by: ${info.guest_name}</div>
+                    <div class="fw-bold"><i class="bi bi-person-fill me-1"></i> Occupied by: <span class="guest-name"></span></div>
                     <div><i class="bi bi-clock-history me-1"></i> <strong>${info.remaining_minutes} min remaining</strong> (until ${info.end_time_formatted})</div>
                 `;
+                badge.querySelector('.guest-name').textContent = info.guest_name;
             } else {
                 badge.className = "nook-status-box bg-success text-white mb-3 text-center";
                 badge.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i> Table #${selectedTable} is currently Available`;
@@ -209,6 +240,7 @@ foreach ($menuItems as $item) {
         }
 
         // Poll API every 15 seconds for real-time countdown updates
+        updateOrderTypeFields();
         fetchLiveOccupancy();
         setInterval(fetchLiveOccupancy, 15000);
 
@@ -292,30 +324,28 @@ foreach ($menuItems as $item) {
                 return;
             }
 
-            const tableNum = document.getElementById('posTableNum')?.value || 1;
-            const orderType = document.getElementById('posOrderType')?.value || 'Dine-In';
+            const orderType = document.getElementById('posOrderType').value;
 
-            // Map and clean every item to guarantee 'price' and 'quantity' exist
-            const cleanedItems = ticket.map(item => {
-                const itemPrice = parseFloat(item.price || item.unit_price || item.item_price || 150.00);
-                const itemQty = parseInt(item.quantity || item.qty || 1);
-                return {
-                    id: item.id || item.menu_item_id || 1,
-                    name: item.name || item.item_name || 'Café Item',
-                    price: itemPrice,
-                    quantity: itemQty
-                };
-            });
-
-            // Calculate exact total on the frontend
-            const total = cleanedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-
+            // The server prices every line from the menu table; send only item IDs and quantities.
             const payload = {
-                table_id: tableNum,
                 order_type: orderType,
-                total_amount: total,
-                items: cleanedItems
+                items: ticket.map(item => ({ id: item.id, quantity: item.quantity }))
             };
+
+            if (orderType === 'Dine-In') {
+                const tableId = parseInt(document.getElementById('posTableNum').value, 10);
+                const minutes = parseInt(document.getElementById('posExpectedMinutes').value, 10);
+                if (!tableId) {
+                    alert('Select a table for a dine-in order.');
+                    return;
+                }
+                if (!minutes || minutes <= 0) {
+                    alert('Enter how many minutes the customer expects to stay.');
+                    return;
+                }
+                payload.table_id = tableId;
+                payload.expected_duration_minutes = minutes;
+            }
 
             const btn = document.getElementById('btnProcessPayment');
             if (btn) {
@@ -331,7 +361,7 @@ foreach ($menuItems as $item) {
             .then(res => res.json())
             .then(data => {
                 if (data.status === 'success') {
-                    alert('Order #' + data.order_id + ' successfully recorded! Total: ₱' + total.toFixed(2));
+                    alert('Order #' + data.order_id + ' successfully recorded! Total: ₱' + Number(data.total).toFixed(2));
                     if (typeof clearTicket === 'function') clearTicket();
                     location.reload();
                 } else {

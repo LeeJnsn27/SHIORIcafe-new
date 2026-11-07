@@ -1,688 +1,192 @@
 # SHIORI Café
 
-A web application for a study café where customers can reserve study nooks and order food and drinks from their tables. Cashiers manage customer check-ins, walk-in orders, and payments, while Managers oversee the menu, tables, staff accounts, reservation adjustments, refunds, and store credit.
+SHIORI Café is a PHP web application for a study café. It is designed to support study nook reservations, table-side ordering, walk-in service, and staff operations.
 
----
+## Technology and database
 
-## 1. Project Overview
+- **Application:** PHP 8.2+ with PDO
+- **Database:** PostgreSQL 18+
+- **PostgreSQL database:** `grp10_shioricafedb`
+- **PostgreSQL schema:** `shioricafe_schema`
+- **Web server for local development:** Apache/PHP from XAMPP
+- **Database driver:** PHP `pdo_pgsql`
+- **Frontend:** HTML, CSS, Bootstrap, and vanilla JavaScript
 
-### 1.1 Description
+XAMPP's MySQL service is not the application database. Use PostgreSQL, either installed locally or provided by a database host. The current PHP connection creates a PostgreSQL PDO connection in [backend/config/db.php](backend/config/db.php).
 
-SHIORI Café is designed to make study café operations more organized and convenient through an online reservation and ordering system. Customers can browse the menu, check table availability, make reservations, and place orders. Staff members can manage reservations, orders, payments, and other café operations based on their assigned roles.
+## Features and roles
 
-### 1.2 User Roles and Capabilities
+The application is intended to support:
 
-| User Role | Main Capabilities |
-|---|---|
-| **Guest** | Browse the landing page, menu, floor plan, and table availability. Register or sign in. |
-| **Customer** | Reserve a study nook, order food and drinks, request reservation extensions, respond to Manager proposals, chat with the Manager, and view bookings and receipts. |
-| **Cashier** | Check in customers, create walk-in dine-in and takeaway orders, manage the order queue, and record cash payments. |
-| **Manager** | Manage menu items, tables, Cashier accounts, reservation adjustments, digital refunds, and store credit. |
+- Guest browsing and customer registration/login.
+- Customer reservations, ordering, and reservation-related actions.
+- Cashier check-in, point-of-sale ordering, and order queue operations.
+- Manager administration of staff, menu, tables, and reservation operations.
+- Reservation reminders and payment-provider integration as planned work.
 
-### 1.3 Release 1 Scope
+The complete business rules are in [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md); user flows are in [docs/USER_FLOWS.md](docs/USER_FLOWS.md). Feature descriptions are not a claim that every flow has been integration-tested.
 
-The first release focuses on the core reservation, ordering, and café management functions.
+## Requirements
 
-- Customer registration, login, and profile management.
-- Cashier and Manager login with role-based access.
-- Study nook reservations with minimum spending requirements.
-- Drink-based and stockout-related reservation waivers.
-- Reservation reminder emails through Google Apps Script.
-- Secure, one-time reservation action links.
-- Table-side food and drink ordering.
-- Walk-in orders managed by Cashiers.
-- Cash payments and PayMongo QR Ph payments in test mode only.
-- One-hour reservation extensions with complimentary time and prorated fees.
-- One-to-one customer and Manager chat linked to a reservation.
+1. **Windows 10/11** (steps below use PowerShell).
+2. **Git** to clone the repository, unless you already have a checkout.
+3. **XAMPP with PHP 8.2+ and Apache** for the local web server.
+4. **PostgreSQL 18+** installed locally or provided by a database host.
+5. PHP's **`pdo_pgsql` extension** enabled for the PHP runtime used by Apache.
+6. **`psql`** if you are authorized to review and apply the database scripts.
+7. A modern web browser.
 
-**Deferred Features:**
+There is no Composer dependency manifest in this repository, so `composer install` is not part of setup.
 
-- AI Study Companion.
-- Analytics and sales reporting.
-- Order email receipts.
+## Windows setup and run instructions
 
-### 1.4 Key Business Rules
+### Step 1: Install and verify PHP, Apache, and PostgreSQL
 
-The detailed and authoritative business rules are documented in `docs/BUSINESS_RULES.md`.
+Install XAMPP with PHP 8.2 or later, and install PostgreSQL 18 or later separately if using a local database. In the PostgreSQL installer, include the command-line tools and pgAdmin if offered. Keep track of the PostgreSQL service, port (usually `5432`), and administrator account. Do not use the PostgreSQL administrator/superuser account as the website's runtime account.
 
-The following are some of the main rules:
+In the XAMPP Control Panel, start Apache. The PostgreSQL server is a separate service and must also be running. Do not start XAMPP's MySQL service for this application.
 
-- The system uses the `Asia/Manila` time zone.
-- Café operating hours are 05:00 to midnight.
-- Every reservation and table session must end by 23:30. Overnight reservations are not allowed.
-- Reservations must start at least 30 minutes from the current time and may be booked up to 14 days in advance.
-- Reservation times use minute precision.
-- Reservation statuses are `Confirmed`, `Adjustment_Pending`, `Occupied`, `Cancelled`, and `Completed`.
-- A registered customer may have only one active reservation at a time.
+Open PowerShell and check the command-line PHP version and extensions:
 
-**Minimum Spending Requirements**
-
-The minimum spend is calculated per reservation, not per person.
-
-| Table Type | Up to 2 Hours | Over 2 to 4 Hours | Over 4 Hours |
-|---|---:|---:|---:|
-| Solo Study Nook | ₱50 | ₱100 | ₱150 |
-| Duo Nook | ₱100 | ₱150 | ₱200 |
-| Group Study Desk | ₱200 | ₱300 | ₱400 |
-
-**Additional Rules:**
-
-- If eligible drink purchases reach at least 50% of the required minimum spend, the remaining shortfall is waived.
-- Extension fees are charged per 30 minutes after the complimentary period.
-- Extension rates are ₱12.50 for Solo, ₱25 for Duo, and ₱50 for Group tables.
-- Complimentary extension time is 30 minutes, or 90 minutes with a qualifying settled drink order.
-- Reservations are not prepaid. Customers pay at the café.
-
-### 1.5 Technologies Used
-
-| Layer | Current Implementation | Planned Target |
-|---|---|---|
-| Frontend | HTML5, CSS3, JavaScript | HTML5, CSS3, Bootstrap 5.3.3, JavaScript |
-| Backend | PHP | PHP 8.2+ with PDO |
-| Database | MySQL (local XAMPP configuration) | PostgreSQL 18+ |
-| Database Hosting | Local development environment | Neon |
-| Local Development | XAMPP | PHP development environment |
-| Reminder Emails | Google Apps Script (planned integration) | Google Apps Script |
-| Payment Integration | PayMongo (planned integration) | PayMongo QR Ph (Test Mode) |
-| Deployment | Not yet finalized | Vercel (subject to PHP compatibility) |
-
-**Implementation Note:** The current database connection file, `backend/config/db.php`, uses PHP MySQLi and a local MySQL configuration. Migration to PostgreSQL using PDO is part of the planned development work.
-
-### 1.6 Project Structure
-
-The current project structure is organized as follows:
-
-```text
-SHIORIcafe/
-│
-├── .agents/
-│   └── skills/
-│
-├── admin/
-│   ├── audit-logs.php
-│   ├── index.php
-│   ├── inquiries.php
-│   ├── login.php
-│   ├── orders.php
-│   └── reservations.php
-│
-├── backend/
-│   ├── api/
-│   ├── auth/
-│   ├── config/
-│   └── database/
-│       ├── archive/
-│       ├── migrations/
-│       └── seed.sql
-│
-├── docs/
-│   ├── backup/
-│   ├── BUSINESS_RULES.md
-│   ├── DATABASE_SPEC.md
-│   ├── PHASE1_HANDOFF.md
-│   ├── PROJECT_PLAN.md
-│   ├── TROUBLESHOOTING.md
-│   ├── USER_FLOWS.md
-│   ├── USER_ROLES.md
-│   ├── USER_ROLE_SETUP.md
-│   ├── feature-workflow.md
-│   └── roadmap.md
-│
-├── frontend/
-│   ├── assets/
-│   │   ├── css/
-│   │   ├── images/
-│   │   └── js/
-│   └── includes/
-│
-├── .env.example
-├── .gitignore
-├── AGENTS.md
-├── README.md
-├── about.php
-├── contact.php
-├── index.php
-├── login.php
-├── logout.php
-├── register.php
-├── reservation.php
-└── services.php
-```
-
-This structure represents the current repository. It may change as the project develops.
-
----
-
-## 2. Prerequisites
-
-### 2.1 Required Software
-
-The following software is needed for the current local development environment:
-
-| Software | Purpose |
-|---|---|
-| XAMPP | Provides Apache, PHP, and MySQL for local development. |
-| PHP | Runs the application's backend code. |
-| MySQL | Provides the database used by the current MySQLi configuration. |
-| Git | Version control and repository management. |
-| Web Browser | Accessing and testing the application. |
-| Visual Studio Code (Optional) | Code editing and project development. |
-
-**Planned Database Migration Requirements:**
-
-The following will be required when the project transitions to PostgreSQL:
-
-- PostgreSQL 18 or newer.
-- PostgreSQL client (`psql`).
-- PHP PDO PostgreSQL extension (`pdo_pgsql`).
-
-**PHP Extensions:**
-
-The current database connection uses PHP MySQLi. The PostgreSQL PDO extension (`pdo_pgsql`) will be required after the planned database migration.
-
-To check your PHP version:
-
-```bash
+```powershell
 php -v
-```
-
-To check the installed PHP extensions:
-
-```bash
+php --ini
 php -m
 ```
 
-Make sure `mysqli` is available for the current database connection. The `pdo_pgsql` extension is required for the planned PostgreSQL implementation.
+Confirm PHP is 8.2+ and `pdo_pgsql` appears in the module list. If it does not, open the PHP configuration used by XAMPP Apache from the Control Panel's **Apache > Config > PHP (php.ini)** menu. Enable the PostgreSQL extensions by removing the leading `;` from the existing `extension=pdo_pgsql` and `extension=pgsql` lines, if those lines and DLLs are present. Save the file, restart Apache, and check again. Do not add duplicate extension entries. Command-line PHP and Apache can use different configuration files, so `php -m` alone does not verify Apache's PHP configuration.
 
-### 2.2 Required Accounts
+Check that the PostgreSQL command-line client is available:
 
-The following accounts are needed for the planned integrations and deployment:
-
-| Account / Service | Purpose | Status |
-|---|---|---|
-| Neon | Hosting the planned PostgreSQL database. | Planned |
-| PayMongo | Testing QR Ph payment integration. | Planned |
-| Google | Supporting reservation reminder emails through Google Apps Script. | Planned |
-| Vercel | Hosting and deploying the application, subject to PHP compatibility. | Optional / Planned |
-
-These accounts are not all required to work on the current local XAMPP setup. They will be needed when their corresponding integrations are implemented and configured.
-
-### 2.3 Database Permissions
-
-For the current local development environment, the MySQL database account must have sufficient permissions to access the application's database and perform the required database operations.
-
-For the planned PostgreSQL implementation, the database setup account must have permission to:
-
-- Create the application schema.
-- Create tables, constraints, indexes, and other required database objects.
-- Run the approved migration scripts.
-- Insert the initial seed data.
-- Enable the required PostgreSQL extension.
-
-The `btree_gist` extension is required for the reservation overlap constraint described in `docs/DATABASE_SPEC.md`.
-
-The PostgreSQL permissions and extension requirements must be verified before database setup begins.
-
----
-
-## 3. Installation and Setup
-
-### 3.1 Clone the Repository
-
-To download the project after it has been published to a remote Git repository, run:
-
-```bash
-git clone <repository-url>
+```powershell
+psql --version
 ```
 
-Navigate to the downloaded project folder:
+If PowerShell says `psql` is not recognized, add the PostgreSQL `bin` folder to your Windows `PATH` or invoke `psql.exe` using its full path, typically under `C:\Program Files\PostgreSQL\<version>\bin\psql.exe`.
 
-```bash
-cd SHIORIcafe
+### Step 2: Get the project files
+
+If you already have the project at `C:\xampp\htdocs\SHIORIcafe`, open PowerShell there and skip the clone command. Otherwise, clone the `staging` branch into XAMPP's `htdocs` directory:
+
+```powershell
+Set-Location C:\xampp\htdocs
+git clone --branch staging --single-branch https://github.com/LeeJnsn27/SHIORIcafe-new.git SHIORIcafe
+Set-Location C:\xampp\htdocs\SHIORIcafe
 ```
 
-Replace `<repository-url>` with the actual URL of the project's remote repository.
+If Git says the destination folder already exists, do not delete or overwrite it; use the existing checkout or choose another folder.
 
-**For an existing local development copy:** If you already have the project folder, open it directly in Visual Studio Code instead of cloning it again.
+### Step 3: Create the local environment file
 
-### 3.2 Install Dependencies
+From `C:\xampp\htdocs\SHIORIcafe`, copy the example:
 
-The project does not currently have a confirmed Composer dependency setup.
-
-If a `composer.json` file is added in the future, install the PHP dependencies using:
-
-```bash
-composer install
-```
-
-### 3.3 Configure the Environment
-
-The repository includes an `.env.example` file as a reference for environment configuration.
-
-If the application is updated to load its configuration from `.env`, create a local environment file using:
-
-```bash
+```powershell
 Copy-Item .env.example .env
+notepad .env
 ```
 
-Open `.env` and configure the required database and application credentials according to the implemented configuration.
+Set the connection values for your PostgreSQL server:
 
-Do not commit the `.env` file to the repository. It is excluded through `.gitignore`.
-
-**Important:** The presence of `.env.example` does not mean that the current PHP code already loads environment variables. Verify the application's configuration implementation before relying on these settings.
-
-### 3.4 Current Local Database Configuration
-
-The current database connection file is:
-
-```text
-backend/config/db.php
-```
-
-It currently uses PHP MySQLi with the following local configuration:
-
-| Setting | Current Value |
-|---|---|
-| Database System | MySQL |
-| Host | localhost |
-| Username | root |
-| Password | Empty |
-| Database Name | shiori_cafe_db |
-
-The database must exist in the local MySQL server, and its tables must match the application's queries before database-dependent features can work.
-
-Do not assume that the planned PostgreSQL migration scripts can initialize the current MySQL database.
-
-### 3.5 Planned PostgreSQL Database Setup
-
-SHIORI Café is designed to transition to PostgreSQL with the following target configuration:
-
-| Setting | Value |
-|---|---|
-| Database Name | `grp10_shioricafedb` |
-| Schema Name | `shioricafe_schema` |
-| Database System | PostgreSQL |
-| Database Hosting | Neon |
-
-**Important:** The database design is documented in `docs/DATABASE_SPEC.md`. The migration scripts and seed data must be finalized and approved before they are executed against a database.
-
-**Step 1: Create the Database**
-
-Create a PostgreSQL database named:
-
-```text
-grp10_shioricafedb
-```
-
-If using Neon, create the database through the Neon project or use the database provided by the project configuration.
-
-**Step 2: Create the Database Schema**
-
-After the database owner approves the schema and authorizes setup, connect to the database and create the application schema:
-
-```sql
-CREATE SCHEMA IF NOT EXISTS shioricafe_schema;
-```
-
-Enable the required extension:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-```
-
-**Step 3: Review the Database Migrations**
-
-The migration scripts are stored in:
-
-```text
-backend/database/migrations/
-```
-
-The current migration files are:
-
-```text
-001_core_schema.sql
-002_order_tables.sql
-003_order_discount_tables.sql
-004_financial_tables.sql
-005_triggers_and_views.sql
-```
-
-These scripts must be reviewed against `docs/DATABASE_SPEC.md` and the approved business rules before execution.
-
-The existence of these files does not mean that the complete database implementation has been approved or verified.
-
-**Step 4: Review the Seed Data**
-
-The seed data file is:
-
-```text
-backend/database/seed.sql
-```
-
-The seed data should include:
-
-- Initial café table records with table numbers, types, capacities, amenities, and availability status.
-- Menu categories and menu items with their corresponding prices.
-- The initial Manager account with a securely hashed password.
-
-The actual table inventory, menu contents, and initial Manager account details must be supplied and confirmed before finalizing the seed data.
-
-**Step 5: Execute Approved Database Scripts**
-
-Only after the database migrations and seed data have been finalized and approved should the SQL scripts be executed in their required dependency order.
-
-For example:
-
-```bash
-psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -f backend/database/migrations/001_core_schema.sql
-```
-
-Continue with the remaining migrations in numerical order, then execute the seed file:
-
-```bash
-psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -f backend/database/seed.sql
-```
-
-Use the direct, non-pooled database connection for database setup and migrations.
-
-**Do not execute incomplete, unapproved, or legacy SQL scripts.**
-
----
-
-## 4. Configuration
-
-### 4.1 Environment Variables
-
-The `.env.example` file provides reference configuration for the planned application environment.
-
-Example configuration:
-
-```env
-APP_ENV=local
-APP_URL=http://localhost:8000
-APP_TIMEZONE=Asia/Manila
-
-DB_HOST=your_database_host
+```dotenv
+DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=grp10_shioricafedb
-DB_USER=your_database_user
-DB_PASSWORD=your_database_password
-DB_SSLMODE=require
-
-DATABASE_URL_DIRECT=your_direct_database_connection_string
-
-PAYMONGO_MODE=test
-PAYMONGO_SECRET_KEY=your_paymongo_test_secret_key
-PAYMONGO_WEBHOOK_SECRET=your_paymongo_webhook_secret
-
-REMINDER_ENDPOINT_TOKEN=your_reminder_endpoint_token
+DB_SCHEMA=shioricafe_schema
+DB_USER=your_runtime_role
+DB_PASSWORD=replace_with_a_nonempty_password
 ```
 
-Replace the example values with actual credentials when the corresponding integrations are implemented.
+Replace `DB_USER` and `DB_PASSWORD` with the actual dedicated runtime login you will create or receive from the database administrator. The password must be non-empty. Do not include surrounding quotes. For a remote database, use the host, port, database name, and login provided by its administrator. The current PHP connection does not consume `DB_SSLMODE` or a connection URI, so a hosted database is not ready to use until its TLS requirements are supported and verified.
 
-Never upload real passwords, API keys, or database connection strings to a public repository.
+`backend/config/db.php` parses the root `.env` file as simple `KEY=VALUE` lines. It reads `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_SCHEMA` from that file, and reads `DB_USER`/`DB_PASSWORD` from `.env` or the PHP process environment. The code has a fallback port of `5173`, so keep `DB_PORT=5432` (or your PostgreSQL server's actual port) explicitly set. `.env` is ignored by Git; never commit it or share its secrets.
 
-### 4.2 Current Database Connection
+### Step 4: Set up the PostgreSQL database and roles
 
-The current database connection is implemented in:
+The application expects database `grp10_shioricafedb` and schema `shioricafe_schema`. For local PostgreSQL, open pgAdmin, connect to the local server, and create a database named `grp10_shioricafedb`. Create separate login roles for migrations and application runtime. In pgAdmin, these are under **Login/Group Roles > Create > Login/Group Role**; enable login, set each password through the pgAdmin password field, and do not grant superuser status. Give the runtime role only the approved privileges required by the application; do not make it a schema owner by default. See [docs/USER_ROLE_SETUP.md](docs/USER_ROLE_SETUP.md) for the intended role model.
 
-```text
-backend/config/db.php
+Do not grant schema/table privileges based on guesswork. The owner must approve the role privileges against the finalized schema. The migration role also needs permission for the schema and extension operations required by the approved migration scripts. Do not manually create `shioricafe_schema` unless the database owner directs you to; migration 001 currently attempts to create it.
+
+**Important: the repository does not currently have a verified, ready-to-run database setup.** The schema is a proposal, migration 004 labels its financial tables as proposed, migration 005 is marked as a draft, and the seed data does not match the current core migration: `seed.sql` names `base_price`, whereas migration 001 defines `current_price`. The seed also contains sample account records and hashes. Do not run these scripts as-is or use the sample accounts. The schema, migration dependencies, runtime grants, and corrected seed data must first be reviewed and approved by the database owner.
+
+The migration files, in their current order, are:
+
+1. `backend/database/migrations/001_core_schema.sql`
+2. `backend/database/migrations/002_order_tables.sql`
+3. `backend/database/migrations/003_order_discount_tables.sql`
+4. `backend/database/migrations/004_financial_tables.sql` (proposed)
+5. `backend/database/migrations/005_triggers_and_views.sql` (draft)
+
+Migration 001 creates the schema and attempts to enable the `btree_gist` extension. Confirm the authorized migration account has the required permissions before running it. Do not apply any migration to a database that contains data you need to preserve unless the database owner has approved a backup and change plan.
+
+**Only after the database owner has approved the scripts:** connect to the target database using the direct PostgreSQL endpoint and the migration role. From the repository root, run each approved migration in dependency order. For a local PostgreSQL server, a migration command has this form; replace the role name with the approved role:
+
+```powershell
+psql -h localhost -p 5432 -U your_migration_role -d grp10_shioricafedb -W -v ON_ERROR_STOP=1 -f .\backend\database\migrations\001_core_schema.sql
 ```
 
-It uses PHP MySQLi and a local MySQL database configuration.
+`-W` prompts for the role's password instead of putting it in the command. Repeat for each reviewed and approved migration. Stop if any command fails; do not continue to later migrations or run the seed after a failure. Only run `.\backend\database\seed.sql` after its columns and sample data have been corrected and reviewed against the schema actually installed. The commands above are examples and are not an approval to apply the current draft files.
 
-### 4.3 Planned PostgreSQL Connection
+### Step 5: Start the website
 
-The application is designed to transition to PostgreSQL through PHP PDO.
+1. Confirm PostgreSQL is running and reachable.
+2. Confirm `.env` has the correct host, port, database, schema, runtime username, and non-empty password.
+3. Start Apache in the XAMPP Control Panel. The PostgreSQL database must run separately; XAMPP MySQL is not used.
+4. Open [http://localhost/SHIORIcafe/](http://localhost/SHIORIcafe/) in your browser.
 
-The planned database connection should:
+The root PHP page may load without exercising the database connection. Database-backed pages require a working PostgreSQL connection, compatible schema, runtime-role grants, and Apache's `pdo_pgsql` extension. Until the migration/seed issues above are resolved, a complete database-backed setup cannot be guaranteed from the repository alone.
 
-- Use the PostgreSQL PDO driver (`pdo_pgsql`).
-- Enable exception-based error handling.
-- Use prepared statements for database queries.
-- Use transactions for operations that require multiple related database changes.
-- Use the `shioricafe_schema` schema when accessing application tables.
-- Properly quote reserved table names such as `"order"` and `"table"`.
+### Step 6: Basic verification and shutdown
 
-Example PDO connection format:
+- Open the landing page and check that PHP renders it through Apache at `http://localhost/SHIORIcafe/`.
+- Visit a feature that reads the database only after the database and schema are ready. A database configuration/connection error means one or more connection settings, server availability, network permissions, credentials, or PHP extensions need attention.
+- Check the Apache/PHP error log and PostgreSQL server log for the detailed local error. The application deliberately does not show database connection details in the browser.
+- When finished, stop Apache from the XAMPP Control Panel. Stop the PostgreSQL service only if you started it for this local session and no other application depends on it.
 
-```php
-<?php
+### Common setup problems
 
-$host = getenv('DB_HOST');
-$port = getenv('DB_PORT');
-$dbname = getenv('DB_NAME');
-$username = getenv('DB_USER');
-$password = getenv('DB_PASSWORD');
-
-$dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
-
-$options = [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-];
-
-$pdo = new PDO($dsn, $username, $password, $options);
-```
-
-This is an example of the planned connection format, not the current implementation. The final connection should load credentials securely from the environment.
-
-### 4.4 PayMongo Configuration
-
-PayMongo is the planned digital payment integration.
-
-For Release 1:
-
-1. Use PayMongo test mode only.
-2. Configure the test secret key in the environment file.
-3. Register the application's payment webhook endpoint.
-4. Configure the webhook secret.
-5. Verify payment confirmations on the server side.
-
-Do not use real payment credentials or process live transactions during development.
-
-### 4.5 Google Apps Script Configuration
-
-Google Apps Script is planned to support reservation reminder emails.
-
-The integration should:
-
-1. Use the café's Google account.
-2. Configure the scheduled trigger.
-3. Send requests to the application's protected reminder endpoint.
-4. Include the configured `REMINDER_ENDPOINT_TOKEN`.
-5. Reject unauthorized requests.
-
-Reservation action links must use secure, one-time tokens. Opening an action link should display a confirmation page; the action itself should only occur after an explicit POST request.
-
-### 4.6 Deployment Configuration
-
-Vercel is the planned deployment platform.
-
-Before deployment, verify that the selected hosting configuration supports the PHP version and extensions required by the application, particularly `pdo_pgsql`.
-
-Configure all required environment variables through the hosting platform's project settings.
-
----
-
-## 5. Running the Application
-
-### 5.1 Start the Current Local Development Environment
-
-The project currently uses a root-level `index.php` file and is organized for local XAMPP development.
-
-To run the project:
-
-1. Place the project folder inside the XAMPP `htdocs` directory.
-2. Open the XAMPP Control Panel.
-3. Start Apache.
-4. Start MySQL if the application requires database access.
-5. Open the project in a web browser.
-
-For the current project directory:
-
-```text
-C:\xampp\htdocs\SHIORIcafe
-```
-
-Open:
-
-```text
-http://localhost/SHIORIcafe/
-```
-
-**Note:** This starts the PHP application through Apache. Database-dependent features will only work when the local MySQL database and required tables are properly configured.
-
-### 5.2 Initial Account Setup
-
-Once the database and initial records are ready:
-
-1. Sign in using the initial Manager account.
-2. Create Cashier accounts through the Manager interface.
-3. Register a customer account through the public application.
-4. Use the customer account to explore the reservation and ordering features.
-
-The initial Manager account must be configured securely before use.
-
-### 5.3 Functional Testing
-
-The following are the main functional scenarios intended for testing:
-
-| Test Scenario | Expected Result |
+| Symptom | Checks |
 |---|---|
-| Browse the menu as a guest | Menu is displayed without requiring login. |
-| View table availability | Available and unavailable tables are displayed correctly. |
-| Reserve a study nook | A valid reservation is created with `Confirmed` status. |
-| Reserve an overlapping time slot | The reservation is rejected. |
-| Submit an order with modified client-side prices | The server uses the actual menu prices. |
-| Access a Cashier-only endpoint without authorization | Access is denied. |
-| Submit an order containing an invalid item | The transaction is rolled back without partial records. |
-| Qualify for the drink waiver | The eligible minimum-spend shortfall is waived. |
+| `DB_USER and DB_PASSWORD must be set` | Confirm both names are present in the root `.env`, contain values, and the password is non-empty. |
+| Database connection failure in browser | Check PostgreSQL is running, `.env` host/port/database and credentials are correct, remote firewall rules permit access, and Apache's PHP has `pdo_pgsql` enabled. Check server logs for the private details. |
+| `could not find driver` | Enable `pdo_pgsql` for XAMPP Apache, save the correct `php.ini`, and restart Apache. |
+| Connection refused | Confirm the PostgreSQL service is running and `DB_HOST`/`DB_PORT` match its listening address and port. |
+| Relation/column does not exist | The installed schema is missing, from a different version, or incompatible with the application query. Do not try random migrations; review the migration and schema with the database owner. |
+| Works in CLI but not in browser (or vice versa) | CLI PHP and Apache may load different `php.ini` files. Verify and enable the extension in the configuration used by Apache. |
 
-These are intended test scenarios. Actual results must be verified during testing.
+## Environment and integrations
 
-### 5.4 Reservation Reminder Jobs
+The current `.env.example` contains only the six database settings used by the database connection. `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_SCHEMA` are read from `.env`; credentials can be read from `.env` or the PHP process environment.
 
-The scheduled reminder process is intended to handle:
+The chat endpoint reads `GEMINI_API_KEY` and optional `GEMINI_MODEL` using PHP `getenv()`. The simple `.env` parser in `db.php` does not export other `.env` values to `getenv()`. Configure those values in the PHP/Apache process environment if enabling the chat integration; do not assume placing them in `.env` is sufficient.
 
-- Sending a reminder email 90 minutes before the reservation starts.
-- Sending a follow-up email if the customer has not checked in one hour after the reservation starts.
-- Automatically cancelling reservations based on the applicable no-response and no-check-in rules.
-- Expiring unanswered Manager proposals at reservation start and processing the corresponding seat reassignment rules.
+PayMongo payments and Google Apps Script reminders are planned integrations. Their secrets are not included in `.env.example` and should not be configured as active features until the corresponding implementation is in place.
 
-### 5.5 Test Documentation
+## Security notes
 
-The project test scenarios use the following test case identifiers:
+- Keep `.env`, database connection strings, API keys, and real credentials private.
+- Use a least-privilege PostgreSQL runtime role with a non-empty password.
+- Use a separate authorized role for schema migrations.
+- Do not use sample seed accounts in a real environment.
+- Apply approved SQL only after backing up any database that contains data.
+- Validate authorization, input handling, and payment confirmations on the server.
+- Keep payment-provider work in test mode until the implementation and deployment are reviewed.
 
-| Test Case ID | Description |
-|---|---|
-| `TC-RES-01` | Reservation overlap rejection |
-| `TC-ORD-01` | Server-side order pricing |
-| `TC-SEC-01` | Role-based access control |
-| `TC-DBX-01` | Database transaction rollback |
-| `TC-WVR-01` | Drink-based minimum-spend waiver |
+## Testing and development status
 
-Test execution commands will be added when the project's test runner is available.
+The repository does not currently document a configured automated test runner. Run relevant checks and manual integration tests against a disposable PostgreSQL database before relying on changes. Do not treat the documented functional scenarios or migration files as evidence that tests have passed.
 
----
+SHIORI Café remains under development. The database connection is PostgreSQL/PDO, but the schema proposal, migration set, seed compatibility, and complete application flows still require review and verification. Obtain owner approval before changing the proposed schema or applying database scripts.
 
-## 6. Legacy Database and Code Migration
+## Project references
 
-Earlier versions of the SHIORI Café project used MySQL and PHP MySQLi. The target database architecture uses PostgreSQL and PHP PDO.
+- [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md) — reservation, ordering, and café rules.
+- [docs/DATABASE_SPEC.md](docs/DATABASE_SPEC.md) — proposed database entities and constraints.
+- [docs/USER_FLOWS.md](docs/USER_FLOWS.md) — customer and staff workflows.
+- [docs/USER_ROLES.md](docs/USER_ROLES.md) — application roles and permissions.
+- [docs/USER_ROLE_SETUP.md](docs/USER_ROLE_SETUP.md) — PostgreSQL role setup guidance.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — troubleshooting notes.
+- [AGENTS.md](AGENTS.md) — repository development guidance.
 
-The legacy SQL scripts are retained for reference only and must not be executed together with the new database migrations.
+## License and project information
 
-### 6.1 Database Technology Changes
-
-| Legacy Implementation | Target Implementation |
-|---|---|
-| MySQL | PostgreSQL |
-| PHP MySQLi | PHP PDO |
-| `mysqli_connect()` | PDO database connection |
-| `mysqli_query()` | PDO prepared statements |
-| `AUTO_INCREMENT` | `GENERATED ALWAYS AS IDENTITY` |
-| MySQL `ENUM` | PostgreSQL text columns with `CHECK` constraints |
-| MySQL `DATETIME` | PostgreSQL `timestamptz` where appropriate |
-| Backtick identifiers | Double-quoted identifiers |
-| `mysqli_insert_id()` | `INSERT ... RETURNING` |
-| Legacy `seats`, `reservations`, and `orders` tables | New `shioricafe_schema` database model |
-
-### 6.2 Legacy SQL Files
-
-The following files are retained as historical references:
-
-```text
-backend/database/archive/
-├── schema.sql
-├── orders-schema.sql
-└── migrate-reservation-times.sql
-```
-
-These files belong to the older database structure. They should not be used to initialize or update the new PostgreSQL database.
-
----
-
-## 7. Security Considerations
-
-The application should follow these security practices:
-
-- Store passwords using PHP's `password_hash()` function.
-- Verify passwords using `password_verify()`.
-- Keep database credentials and API keys in environment variables.
-- Never commit `.env` files or sensitive credentials to version control.
-- Use prepared statements to prevent SQL injection.
-- Apply role-based access control to protected endpoints.
-- Validate all user input on the server side.
-- Verify payment confirmations through the payment provider's webhook.
-- Keep PayMongo in test mode during development.
-- Store only hashed reservation action tokens.
-- Never expose raw action tokens in application logs.
-
-These practices should be verified against the actual implementation before the system is considered production-ready.
-
----
-
-## 8. Project Documentation
-
-The following documents provide additional information about the project:
-
-| File | Description |
-|---|---|
-| `README.md` | Project overview, prerequisites, installation, configuration, and execution instructions. |
-| `AGENTS.md` | Project-specific development instructions and workflow guidance. |
-| `docs/BUSINESS_RULES.md` | Detailed café policies, reservation rules, payment rules, and business logic. |
-| `docs/DATABASE_SPEC.md` | Database entities, relationships, constraints, and database design specifications. |
-| `docs/PHASE1_HANDOFF.md` | Project handoff and implementation reference. |
-| `docs/PROJECT_PLAN.md` | Project planning information. |
-| `docs/USER_FLOWS.md` | User workflows and system interaction flows. |
-| `docs/USER_ROLES.md` | User roles and permissions. |
-| `docs/USER_ROLE_SETUP.md` | User role setup reference. |
-| `docs/TROUBLESHOOTING.md` | Troubleshooting reference. |
-| `docs/roadmap.md` | Planned project development and milestones. |
-| `docs/feature-workflow.md` | Feature development workflow. |
-
----
-
-## 9. Current Development Status
-
-SHIORI Café is under development for Release 1 (Activity 3).
-
-The following items must be completed or verified before the planned PostgreSQL database can be used for full system testing:
-
-- Final review and approval of the PostgreSQL database schema.
-- Completion and verification of all database migration scripts.
-- Preparation of the initial seed data.
-- Confirmation of the café's table inventory and menu records.
-- Preparation of the initial Manager account.
-- Verification of the Neon database configuration and required PostgreSQL extensions.
-- Completion of the migration from legacy MySQL/MySQLi code to PostgreSQL/PDO.
-
-**Important:** The database specification is the reference for the intended database design. Database scripts must be consistent with the approved specification before execution.
-
----
-
-## 10. License and Project Information
-
-SHIORI Café is an academic software development project. It is intended for educational and demonstration purposes as part of the team's project requirements.
+SHIORI Café is an academic software development project intended for educational and demonstration purposes.

@@ -16,54 +16,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $error = "Please enter both email and password.";
     } else {
         try {
-            if (isset($pdo)) {
-                // Query the staff table using email
-                $stmt = $pdo->prepare("
-                    SELECT staff_id, email, password_hash, role 
-                    FROM shioricafe_schema.staff 
-                    WHERE email = :email
-                    LIMIT 1
-                ");
-                $stmt->execute([':email' => $email]);
-                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Query the staff table using email
+            $stmt = $pdo->prepare("
+                SELECT staff_id, email, password_hash, role
+                FROM shioricafe_schema.staff
+                WHERE email = :email
+                LIMIT 1
+            ");
+            $stmt->execute([':email' => $email]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-                $role = '';
-                $staffId = null;
+            // Only a real staff record whose stored hash matches may log in.
+            if ($user && password_verify($password, $user['password_hash'])) {
+                // Prevent session fixation: new session ID after authentication.
+                session_regenerate_id(true);
 
-                if ($user && (password_verify($password, $user['password_hash']) || $password === 'password')) {
-                    $role = $user['role'] ?? 'Cashier';
-                    $staffId = $user['staff_id'];
-                } elseif ($email === 'cashier@shioricafe.local') {
-                    // Fallback for Cashier test account
-                    $role = 'Cashier';
-                    $staffId = 2;
-                } elseif ($email === 'manager@shioricafe.local' || $email === 'admin@shioricafe.local') {
-                    // Fallback for Manager/Admin test accounts
-                    $role = 'Manager';
-                    $staffId = 1;
+                $role = $user['role'];
+                $normalizedRole = strtolower(trim($role));
+
+                // Store Staff Session Information
+                $_SESSION['staff_id']   = $user['staff_id'];
+                $_SESSION['staff_role'] = $role;
+                $_SESSION['user_role']  = $normalizedRole;
+
+                // Role-Based Redirection
+                if (in_array($normalizedRole, ['cashier', 'staff'])) {
+                    header("Location: orders.php");
+                } else {
+                    header("Location: index.php");
                 }
-
-                if (!empty($role)) {
-                    $normalizedRole = strtolower(trim($role));
-
-                    // Store Staff Session Information
-                    $_SESSION['staff_id']   = $staffId;
-                    $_SESSION['staff_role'] = $role;
-                    $_SESSION['user_role']  = $normalizedRole;
-
-                    // Role-Based Redirection
-                    if (in_array($normalizedRole, ['cashier', 'staff'])) {
-                        header("Location: orders.php");
-                    } else {
-                        header("Location: index.php");
-                    }
-                    exit;
-                }
+                exit;
             }
 
             $error = "Invalid admin credentials.";
         } catch (Exception $e) {
-            $error = "Login error: " . $e->getMessage();
+            error_log('Admin login error: ' . $e->getMessage());
+            $error = "Login is temporarily unavailable. Please try again.";
         }
     }
 }

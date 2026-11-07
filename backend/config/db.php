@@ -12,13 +12,30 @@ if (file_exists($envFile)) {
     }
 }
 
-// Set connection parameters (defaults set to your local PostgreSQL setup)
+// Set connection parameters
 $host     = $_ENV['DB_HOST']     ?? 'localhost';
 $port     = $_ENV['DB_PORT']     ?? '5173';
 $dbname   = $_ENV['DB_NAME']     ?? 'grp10_shioricafedb';
-$user     = $_ENV['DB_USER']     ?? 'postgres';
-$password = $_ENV['DB_PASSWORD'] ?? 'mypostGRE'; // <--- PUT YOUR POSTGRES PASSWORD HERE
 $schema   = $_ENV['DB_SCHEMA']   ?? 'shioricafe_schema';
+
+// Credentials have no defaults. Read them from .env or real environment variables.
+$user     = $_ENV['DB_USER']     ?? getenv('DB_USER');
+$password = $_ENV['DB_PASSWORD'] ?? getenv('DB_PASSWORD');
+
+$missing = [];
+if ($user === false || $user === '') {
+    $missing[] = 'DB_USER';
+}
+if ($password === false || $password === '') {
+    $missing[] = 'DB_PASSWORD';
+}
+if ($missing) {
+    error_log('Database configuration error: missing ' . implode(', ', $missing));
+    if (!headers_sent()) {
+        http_response_code(500);
+    }
+    die('Database configuration error: DB_USER and DB_PASSWORD must be set.');
+}
 
 try {
     $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
@@ -30,5 +47,10 @@ try {
     // Set PostgreSQL schema search path
     $pdo->exec("SET search_path TO $schema, public");
 } catch (PDOException $e) {
-    die("Database connection failure: " . $e->getMessage());
+    // Do not echo $e->getMessage(): it can include the host, database name and user.
+    error_log('Database connection failed (code ' . $e->getCode() . ')');
+    if (!headers_sent()) {
+        http_response_code(500);
+    }
+    die('Database connection failure.');
 }

@@ -60,6 +60,8 @@ The detailed and authoritative business rules are documented in `docs/BUSINESS_R
 | Duo Nook | ₱100 | ₱150 | ₱200 |
 | Group Study Desk | ₱200 | ₱300 | ₱400 |
 
+“Note: This table shows the minimum spend by reservation duration band, not a required 2-hour stay. Customers may book shorter stays; qualifying drink purchases may reduce the remaining shortfall.”
+
 ### 1.5 Technologies Used
 
 | Layer | Implementation |
@@ -186,4 +188,4 @@ Earlier versions of SHIORI Café used MySQL/MySQLi. The legacy SQL scripts are r
 ## 9. License and Project Information
 SHIORI Café is an academic software development project intended for educational and demonstration purposes as part of the team's academic requirements.
 
-“Note: This table shows the minimum spend by reservation duration band, not a required 2-hour stay. Customers may book shorter stays; qualifying drink purchases may reduce the remaining shortfall.”
+

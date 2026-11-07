@@ -9,34 +9,17 @@ try {
     $input = file_get_contents('php://input');
     $data  = json_decode($input, true) ?: $_POST;
 
-    $guestName  = trim($data['name'] ?? $data['full_name'] ?? 'Guest Customer');
-    $guestEmail = trim($data['email'] ?? 'guest@shioricafe.local');
-    $guestPhone = trim($data['phone'] ?? '09000000000');
-
-    // Resolve or create customer
-    $customerId = $_SESSION['customer_id'] ?? null;
-    if (!$customerId) {
-        $custStmt = $pdo->prepare("SELECT customer_id FROM shioricafe_schema.customer WHERE email = :email LIMIT 1");
-        $custStmt->execute([':email' => $guestEmail]);
-        $existingId = $custStmt->fetchColumn();
-
-        if ($existingId) {
-            $customerId = $existingId;
-        } else {
-            $insCust = $pdo->prepare("
-                INSERT INTO shioricafe_schema.customer (full_name, email, phone) 
-                VALUES (:name, :email, :phone) 
-                RETURNING customer_id
-            ");
-            $insCust->execute([
-                ':name'  => $guestName,
-                ':email' => $guestEmail,
-                ':phone' => $guestPhone
-            ]);
-            $customerId = $insCust->fetchColumn();
-        }
+    // Only signed-in customers may create reservations (BUSINESS_RULES.md section 9).
+    // Guests are not given a customer row, and no other customer is substituted.
+    $customerId = intval($_SESSION['customer_id'] ?? 0);
+    if ($customerId <= 0) {
+        http_response_code(401);
+        echo json_encode([
+            'status'  => 'error',
+            'message' => 'Please sign in as a customer to reserve a nook.'
+        ]);
+        exit();
     }
-    if (!$customerId) { $customerId = 1; }
 
     // Parse inputs
     $tableId   = intval($data['table_id'] ?? $data['nook_id'] ?? 1);

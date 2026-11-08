@@ -6,19 +6,20 @@ VALUES
 ('Pastries')
 ON CONFLICT DO NOTHING;
 
--- 2. Seed Menu Items (Changed stock_status to 'In Stock' to pass check constraint)
-INSERT INTO shioricafe_schema.menu_item (category_id, item_name, description, base_price, stock_status, is_active)
-VALUES 
-(1, 'Signature Shiori Latte', 'Rich espresso with steamed milk and a hint of vanilla.', 140.00, 'In Stock', true),
-(2, 'Matcha Cold Brew', 'Premium Kyoto matcha over ice.', 160.00, 'In Stock', true),
-(3, 'Sakura Cheesecake', 'Light cheesecake with subtle cherry blossom flavors.', 180.00, 'In Stock', true)
+-- 2. Seed Menu Items
+INSERT INTO shioricafe_schema.menu_item
+    (category_id, item_name, description, current_price, stock_status, is_active)
+VALUES
+    (1, 'Signature Shiori Latte', 'Rich espresso with steamed milk and a hint of vanilla.', 140.00, 'In Stock', true),
+    (2, 'Matcha Cold Brew', 'Premium Kyoto matcha over ice.', 160.00, 'In Stock', true),
+    (3, 'Sakura Cheesecake', 'Light cheesecake with subtle cherry blossom flavors.', 180.00, 'In Stock', true)
 ON CONFLICT DO NOTHING;
 
 -- 3. Seed Staff (Changed 'username' to 'email', and roles to 'Manager' / 'Cashier')
-INSERT INTO shioricafe_schema.staff (full_name, email, password_hash, role, is_active)
+INSERT INTO shioricafe_schema.staff (full_name, email, password_hash, role)
 VALUES 
-('Admin Manager', 'manager@shioricafe.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Manager', true),
-('Jane Barista', 'cashier@shioricafe.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Cashier', true)
+('Admin Manager', 'manager@shioricafe.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Manager'),
+('Jane Barista', 'cashier@shioricafe.local', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Cashier')
 ON CONFLICT DO NOTHING;
 
 -- 4. Seed Customers (Changed 'username' to 'email')

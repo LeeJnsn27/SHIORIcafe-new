@@ -121,7 +121,7 @@ function resolveMenuItems(PDO $pdo, array $lines): array
     }
 
     // menu_item.item_name is unique case-insensitively (uq_menu_item_name_lower), so a name matches at most one item.
-    $byName    = [];
+    $byName   = [];
     $nameStmt  = $pdo->prepare($base . ' AND LOWER(m.item_name) = LOWER(?)');
     foreach ($lines as $line) {
         if ($line['name'] !== null && !array_key_exists($line['name'], $byName)) {
@@ -156,12 +156,8 @@ function resolveMenuItems(PDO $pdo, array $lines): array
 }
 
 /**
- * Walk-in order through staff: creates a unique walk-in session (customer_id NULL, is_walkin TRUE).
- * Dine-In needs a table and an expected stay that ends by 23:30 (Asia/Manila), on an Available table
- * with no overlapping active reservation, and the session is Occupied.
- * Takeaway has no table and no end time, and its session is Completed when the transaction ends
- * (BUSINESS_RULES.md section 7), so it is created Completed with completed_at and completed_by_staff_id set.
- * Differs from create-order.php only in this takeaway status.
+ * Walk-in order through staff: creates a unique walk-in session if Dine-In, 
+ * or leaves reservation_id as null for Takeaway/counter orders unless explicitly linked.
  */
 function createWalkInSession(PDO $pdo, int $staffId, string $orderType, array $data): array
 {
@@ -169,6 +165,7 @@ function createWalkInSession(PDO $pdo, int $staffId, string $orderType, array $d
     $start = $now->setTime((int)$now->format('H'), (int)$now->format('i'), 0);
     $end   = null;
     $table = null;
+    $reservationId = null;
 
     if ($orderType === 'Dine-In') {
         $minutes = parsePositiveInt($data['expected_duration_minutes'] ?? null);
@@ -214,33 +211,31 @@ function createWalkInSession(PDO $pdo, int $staffId, string $orderType, array $d
         if ($overlap->fetchColumn() !== false) {
             fail(409, 'That table is occupied or reserved during the expected stay.');
         }
+
+        $stmt = $pdo->prepare("
+            INSERT INTO shioricafe_schema.reservation (
+                table_id, reservation_start_at, reservation_end_at, status, is_walkin,
+                checked_in_at, checked_in_by_staff_id, completed_at, completed_by_staff_id
+            ) VALUES (
+                :table_id, CAST(:start_at AS timestamptz), CAST(:end_at AS timestamptz), 'Occupied', TRUE,
+                CURRENT_TIMESTAMP, :staff_id, NULL, NULL
+            ) RETURNING reservation_id
+        ");
+        $stmt->execute([
+            ':table_id' => $table,
+            ':start_at' => $start->format('Y-m-d H:i:sP'),
+            ':end_at'   => $end->format('Y-m-d H:i:sP'),
+            ':staff_id' => $staffId,
+        ]);
+        $reservationId = $stmt->fetchColumn();
+        $stmt->closeCursor();
+    } else {
+        // Takeaway or counter orders can accept an optional reservation_id if provided, otherwise null.
+        $reservationId = parsePositiveInt($data['reservation_id'] ?? null);
     }
 
-    // ck_reservation_completion: status = 'Completed' exactly when completed_at is set.
-    $completed = $orderType === 'Takeaway';
-
-    $stmt = $pdo->prepare("
-        INSERT INTO shioricafe_schema.reservation (
-            table_id, reservation_start_at, reservation_end_at, status, is_walkin,
-            checked_in_at, checked_in_by_staff_id, completed_at, completed_by_staff_id
-        ) VALUES (
-            :table_id, CAST(:start_at AS timestamptz), CAST(:end_at AS timestamptz), :status, TRUE,
-            CURRENT_TIMESTAMP, :staff_id, " . ($completed ? 'CURRENT_TIMESTAMP' : 'NULL') . ", :completed_by
-        ) RETURNING reservation_id
-    ");
-    $stmt->execute([
-        ':table_id'     => $table,
-        ':start_at'     => $start->format('Y-m-d H:i:sP'),
-        ':end_at'       => $end?->format('Y-m-d H:i:sP'),
-        ':status'       => $completed ? 'Completed' : 'Occupied',
-        ':staff_id'     => $staffId,
-        ':completed_by' => $completed ? $staffId : null,
-    ]);
-    $reservationId = $stmt->fetchColumn();
-    $stmt->closeCursor();
-
     return [
-        'reservation_id' => (int)$reservationId,
+        'reservation_id' => $reservationId ? (int)$reservationId : null,
         'table_id'       => $table,
         'order_type'     => $orderType,
     ];

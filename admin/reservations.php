@@ -26,7 +26,6 @@ function sendReservationEmail($toEmail, $guestName, $subject, $messageBody) {
     </div>
     ";
 
-    // Standard PHP mail() execution (Requires configured sendmail/SMTP in XAMPP for live external delivery)
     return @mail($toEmail, $subject, $htmlBody, $headers);
 }
 
@@ -40,7 +39,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             SELECT r.*, c.full_name as guest_name, c.email as guest_email 
             FROM shioricafe_schema.reservation r 
             LEFT JOIN shioricafe_schema.customer c ON r.customer_id = c.customer_id 
-            WHERE r.reservation_id = :id OR r.id = :id
+            WHERE r.reservation_id = :id
         ");
         $infoStmt->execute([':id' => $resId]);
         $resData = $infoStmt->fetch(PDO::FETCH_ASSOC);
@@ -54,7 +53,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             $stmt = $pdo->prepare("
                 UPDATE shioricafe_schema.reservation 
                 SET status = 'Cancelled', cancellation_reason = :reason 
-                WHERE reservation_id = :id OR id = :id
+                WHERE reservation_id = :id
             ");
             $stmt->execute([':reason' => $reason, ':id' => $resId]);
 
@@ -80,7 +79,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
                 SET reservation_start_at = :start_at, 
                     reservation_end_at = :end_at, 
                     cancellation_reason = :reason 
-                WHERE reservation_id = :id OR id = :id
+                WHERE reservation_id = :id
             ");
             $stmt->execute([
                 ':start_at' => $startAt,
@@ -100,7 +99,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['action'], $_POST['res
             }
         }
     } catch (Exception $e) {
-        // Log errors if necessary
+        die("Adjustment Error: " . $e->getMessage());
     }
 
     header("Location: reservations.php");
@@ -159,17 +158,17 @@ try {
                     <tbody>
                         <?php if (!empty($reservations)): ?>
                             <?php foreach ($reservations as $reservation): 
-                                $id = $reservation['reservation_id'] ?? $reservation['id'] ?? 0;
+                                $id = $reservation['reservation_id'] ?? 0;
                                 $tableId = $reservation['table_id'] ?? '1';
                                 $nookName = $reservation['nook_name'] ?? ("Table / Nook #" . $tableId);
                                 $nookType = $reservation['nook_type'] ?? 'Standard Nook';
-                                $guestName = $reservation['guest_name'] ?? $reservation['name'] ?? 'Guest';
-                                $guestEmail = $reservation['guest_email'] ?? $reservation['email'] ?? '';
+                                $guestName = $reservation['guest_name'] ?? 'Guest';
+                                $guestEmail = $reservation['guest_email'] ?? '';
                                 
-                                $startAt = $reservation['reservation_start_at'] ?? $reservation['created_at'] ?? null;
-                                $resDate = $startAt ? date('Y-m-d', strtotime($startAt)) : ($reservation['reservation_date'] ?? '');
-                                $resTime = $startAt ? date('H:i', strtotime($startAt)) : ($reservation['reservation_time'] ?? '');
-                                $displayTime = $startAt ? date('h:i A', strtotime($startAt)) : $resTime;
+                                $startAt = $reservation['reservation_start_at'] ?? null;
+                                $resDate = $startAt ? date('Y-m-d', strtotime($startAt)) : '';
+                                $resTime = $startAt ? date('H:i', strtotime($startAt)) : '';
+                                $displayTime = $startAt ? date('h:i A', strtotime($startAt)) : '';
                                 
                                 $status = $reservation['status'] ?? 'Confirmed';
                                 $reason = $reservation['cancellation_reason'] ?? '';

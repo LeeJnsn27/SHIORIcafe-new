@@ -102,7 +102,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     id="login_input" 
                     name="login_input" 
                     value="<?php echo htmlspecialchars($_POST['login_input'] ?? ''); ?>" 
-                    placeholder="shirainebituin@gmail.com" 
+                    placeholder="type your email" 
                     required
                 >
             </div>

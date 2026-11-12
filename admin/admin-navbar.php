@@ -10,7 +10,22 @@ $userRole = strtolower(trim($rawRole));
 $isAdminUser = in_array($userRole, ['admin', 'manager', 'administrator']);
 ?>
 
-<nav class="navbar navbar-expand-md admin-navbar">
+<!-- Fix for Issue 104: Prevent content overlap beneath the fixed navbar -->
+<style>
+    body {
+        padding-top: 75px !important;
+    }
+    .admin-navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 1030;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+</style>
+
+<nav class="navbar navbar-expand-md admin-navbar bg-dark navbar-dark">
     <div class="container">
         <a class="navbar-brand" href="<?php echo $isAdminUser ? 'index.php' : 'orders.php'; ?>">栞 SHIORI Admin</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#adminNav" style="border-color: rgba(255,255,255,0.3);">
